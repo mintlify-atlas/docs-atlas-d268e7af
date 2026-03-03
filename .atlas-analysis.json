@@ -1,0 +1,136 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "lib-jitsi-meet",
+  "projectDescription": "JavaScript library for building custom video conferencing applications with Jitsi Meet",
+  "theme": "aspen",
+  "primaryColor": "#1D76BA",
+  "lightColor": "#3FA9F5",
+  "darkColor": "#0E5A8A",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/connections",
+              "concepts/conferences",
+              "concepts/tracks",
+              "concepts/participants"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-connections",
+              "guides/managing-conferences",
+              "guides/handling-media-tracks",
+              "guides/screen-sharing",
+              "guides/audio-video-quality",
+              "guides/end-to-end-encryption",
+              "guides/recording",
+              "guides/statistics-analytics"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/webrtc-internals",
+              "advanced/xmpp-signaling",
+              "advanced/codec-selection",
+              "advanced/network-optimization",
+              "advanced/browser-compatibility"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/jitsi-meet-js",
+              "api/jitsi-connection",
+              "api/jitsi-conference",
+              "api/jitsi-participant"
+            ]
+          },
+          {
+            "group": "Media Tracks",
+            "pages": [
+              "api/jitsi-track",
+              "api/jitsi-local-track",
+              "api/jitsi-remote-track",
+              "api/media-devices"
+            ]
+          },
+          {
+            "group": "Events",
+            "pages": [
+              "api/events/connection-events",
+              "api/events/conference-events",
+              "api/events/track-events",
+              "api/events/media-device-events"
+            ]
+          },
+          {
+            "group": "Errors",
+            "pages": [
+              "api/errors/connection-errors",
+              "api/errors/conference-errors",
+              "api/errors/track-errors"
+            ]
+          },
+          {
+            "group": "Advanced APIs",
+            "pages": [
+              "api/rtc-stats",
+              "api/audio-mixer",
+              "api/vad-emitter",
+              "api/proxy-connection"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "WebRTC-based video conferencing",
+    "XMPP/Jingle signaling protocol",
+    "End-to-end encryption (E2EE)",
+    "Screen sharing and desktop capture",
+    "Audio/video quality control",
+    "Real-time statistics and analytics",
+    "Multi-party conference support",
+    "Browser compatibility layer"
+  ],
+  "publicApiSurface": [
+    "JitsiMeetJS.init()",
+    "JitsiMeetJS.createLocalTracks()",
+    "JitsiMeetJS.joinConference()",
+    "JitsiConnection",
+    "JitsiConference",
+    "JitsiLocalTrack",
+    "JitsiRemoteTrack",
+    "JitsiParticipant",
+    "JitsiMediaDevices",
+    "JitsiConferenceEvents",
+    "JitsiConnectionEvents",
+    "JitsiTrackEvents",
+    "TraceablePeerConnection",
+    "RTCStats",
+    "AudioMixer",
+    "TrackVADEmitter"
+  ]
+}
