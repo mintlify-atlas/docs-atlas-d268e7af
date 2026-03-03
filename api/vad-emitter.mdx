@@ -1,0 +1,426 @@
+---
+title: TrackVADEmitter
+description: Voice Activity Detection (VAD) for audio tracks using WebAudio processing
+---
+
+## Overview
+
+TrackVADEmitter connects a JitsiLocalTrack to a VAD (Voice Activity Detection) processor using the Web Audio API's ScriptProcessorNode. It processes raw PCM audio data and emits VAD scores via events, enabling real-time voice activity detection for features like noise suppression, active speaker detection, and audio visualization.
+
+## Constructor
+
+```typescript
+new TrackVADEmitter(
+  procNodeSampleRate: number,
+  vadProcessor: IVadProcessor,
+  jitsiLocalTrack: JitsiLocalTrack
+)
+```
+
+<ParamField path="procNodeSampleRate" type="number" required>
+  Sample rate of the ScriptProcessorNode. Valid values: 256, 512, 1024, 2048, 4096, 8192, 16384. Other values will default to the closest neighbor.
+</ParamField>
+
+<ParamField path="vadProcessor" type="IVadProcessor" required>
+  VAD processor implementing the IVadProcessor interface for calculating voice activity scores
+</ParamField>
+
+<ParamField path="jitsiLocalTrack" type="JitsiLocalTrack" required>
+  The JitsiLocalTrack (audio) to analyze
+</ParamField>
+
+<Note>
+  Use the `TrackVADEmitter.create()` factory method instead of calling the constructor directly.
+</Note>
+
+## Factory Method
+
+### create
+
+Factory method that sets up all necessary components and creates a TrackVADEmitter instance.
+
+```typescript
+static create(
+  micDeviceId: string,
+  procNodeSampleRate: number,
+  vadProcessor: IVadProcessor
+): Promise<TrackVADEmitter>
+```
+
+<ParamField path="micDeviceId" type="string" required>
+  Target microphone device ID to capture audio from
+</ParamField>
+
+<ParamField path="procNodeSampleRate" type="number" required>
+  Sample rate for the ScriptProcessorNode (256, 512, 1024, 2048, 4096, 8192, or 16384)
+</ParamField>
+
+<ParamField path="vadProcessor" type="IVadProcessor" required>
+  VAD processor that implements:
+  - `getSampleLength()` - Returns required PCM sample size
+  - `getRequiredPCMFrequency()` - Returns required PCM frequency
+  - `calculateAudioFrameVAD(pcmSample)` - Calculates VAD score for a PCM sample
+</ParamField>
+
+**Returns:** Promise resolving to a new TrackVADEmitter instance
+
+**Example:**
+
+```javascript
+import TrackVADEmitter from '@jitsi/lib-jitsi-meet/modules/detection/TrackVADEmitter';
+
+// Create a custom VAD processor
+const vadProcessor = {
+  getSampleLength() {
+    return 480; // RNNoise typical sample size
+  },
+  
+  getRequiredPCMFrequency() {
+    return 48000; // 48kHz
+  },
+  
+  calculateAudioFrameVAD(pcmSample) {
+    // Process PCM sample and return VAD score (0-1)
+    // This would typically use a library like RNNoise
+    return myVADLibrary.process(pcmSample);
+  }
+};
+
+// Create emitter
+const vadEmitter = await TrackVADEmitter.create(
+  'default', // Microphone device ID
+  2048,      // ScriptProcessorNode sample rate
+  vadProcessor
+);
+
+// Listen for VAD scores
+vadEmitter.on('vad-score-published', (data) => {
+  console.log('VAD score:', data.score);
+  console.log('Device:', data.deviceId);
+  console.log('Timestamp:', data.timestamp);
+});
+
+// Start processing
+vadEmitter.start();
+```
+
+## Methods
+
+### start
+
+Starts the VAD emitter by connecting the audio graph. Audio data begins flowing through the ScriptProcessorNode.
+
+```typescript
+start(): void
+```
+
+**Example:**
+
+```javascript
+const vadEmitter = await TrackVADEmitter.create('default', 2048, vadProcessor);
+vadEmitter.start();
+
+console.log('VAD detection started');
+```
+
+### stop
+
+Stops the VAD emitter by disconnecting the audio graph and clearing internal buffers.
+
+```typescript
+stop(): void
+```
+
+**Example:**
+
+```javascript
+// Temporarily stop VAD processing
+vadEmitter.stop();
+
+// Can restart later
+vadEmitter.start();
+```
+
+### destroy
+
+Performs complete cleanup: disconnects audio graph, stops the underlying track, and releases all resources.
+
+```typescript
+destroy(): void
+```
+
+<Warning>
+  Always call `destroy()` when done to prevent memory leaks. After calling destroy(), the emitter cannot be reused.
+</Warning>
+
+**Example:**
+
+```javascript
+// Clean up when done
+vadEmitter.destroy();
+```
+
+## Events
+
+### VAD_SCORE_PUBLISHED
+
+Emitted whenever a VAD score is calculated for an audio frame. This event is fired at a rate determined by the processor sample size and node sample rate.
+
+**Event Data:**
+
+<ParamField path="deviceId" type="string">
+  The microphone device ID being analyzed
+</ParamField>
+
+<ParamField path="score" type="number">
+  Voice activity detection score (typically 0-1, where higher = more likely voice)
+</ParamField>
+
+<ParamField path="pcmData" type="Float32Array">
+  The raw PCM audio sample that was analyzed
+</ParamField>
+
+<ParamField path="timestamp" type="number">
+  Timestamp when the sample was processed (Date.now())
+</ParamField>
+
+**Example:**
+
+```javascript
+import { DetectionEvents } from '@jitsi/lib-jitsi-meet/modules/detection/DetectionEvents';
+
+vadEmitter.on(DetectionEvents.VAD_SCORE_PUBLISHED, (data) => {
+  const { deviceId, score, pcmData, timestamp } = data;
+  
+  if (score > 0.7) {
+    console.log(`Voice detected on ${deviceId} at ${timestamp}`);
+  }
+  
+  // Could process PCM data further
+  // e.g., apply noise suppression, audio visualization
+});
+```
+
+## Complete Examples
+
+### Basic VAD Detection with RNNoise
+
+```javascript
+import TrackVADEmitter from '@jitsi/lib-jitsi-meet/modules/detection/TrackVADEmitter';
+import { DetectionEvents } from '@jitsi/lib-jitsi-meet/modules/detection/DetectionEvents';
+import RNNoise from 'rnnoise-wasm'; // Hypothetical RNNoise wrapper
+
+class VoiceActivityDetector {
+  constructor(deviceId) {
+    this.deviceId = deviceId;
+    this.vadEmitter = null;
+    this.isVoiceActive = false;
+  }
+
+  async initialize() {
+    // Initialize RNNoise
+    const rnnoise = await RNNoise.create();
+
+    // Create VAD processor
+    const vadProcessor = {
+      getSampleLength: () => 480, // RNNoise sample size
+      getRequiredPCMFrequency: () => 48000,
+      calculateAudioFrameVAD: (sample) => rnnoise.processFrame(sample)
+    };
+
+    // Create VAD emitter
+    this.vadEmitter = await TrackVADEmitter.create(
+      this.deviceId,
+      4096, // ScriptProcessorNode buffer size
+      vadProcessor
+    );
+
+    // Listen for VAD events
+    this.vadEmitter.on(DetectionEvents.VAD_SCORE_PUBLISHED, (data) => {
+      this.handleVADScore(data);
+    });
+
+    // Start detection
+    this.vadEmitter.start();
+  }
+
+  handleVADScore({ score, timestamp }) {
+    const wasActive = this.isVoiceActive;
+    this.isVoiceActive = score > 0.5;
+
+    // Detect state changes
+    if (!wasActive && this.isVoiceActive) {
+      console.log('Voice started at', timestamp);
+      this.onVoiceStart();
+    } else if (wasActive && !this.isVoiceActive) {
+      console.log('Voice stopped at', timestamp);
+      this.onVoiceStop();
+    }
+  }
+
+  onVoiceStart() {
+    // Handle voice start (e.g., show indicator)
+    document.getElementById('mic-indicator').classList.add('active');
+  }
+
+  onVoiceStop() {
+    // Handle voice stop
+    document.getElementById('mic-indicator').classList.remove('active');
+  }
+
+  destroy() {
+    if (this.vadEmitter) {
+      this.vadEmitter.destroy();
+      this.vadEmitter = null;
+    }
+  }
+}
+
+// Usage
+const detector = new VoiceActivityDetector('default');
+await detector.initialize();
+
+// Later...
+detector.destroy();
+```
+
+### Advanced: VAD with Audio Visualization
+
+```javascript
+import TrackVADEmitter from '@jitsi/lib-jitsi-meet/modules/detection/TrackVADEmitter';
+import { DetectionEvents } from '@jitsi/lib-jitsi-meet/modules/detection/DetectionEvents';
+
+class VADVisualizer {
+  constructor(canvasId, deviceId) {
+    this.canvas = document.getElementById(canvasId);
+    this.ctx = this.canvas.getContext('2d');
+    this.deviceId = deviceId;
+    this.vadEmitter = null;
+    this.scoreHistory = [];
+    this.maxHistory = 100;
+  }
+
+  async start(vadProcessor) {
+    this.vadEmitter = await TrackVADEmitter.create(
+      this.deviceId,
+      2048,
+      vadProcessor
+    );
+
+    this.vadEmitter.on(DetectionEvents.VAD_SCORE_PUBLISHED, (data) => {
+      this.updateVisualization(data);
+    });
+
+    this.vadEmitter.start();
+    this.draw();
+  }
+
+  updateVisualization({ score, pcmData }) {
+    // Store score history
+    this.scoreHistory.push(score);
+    if (this.scoreHistory.length > this.maxHistory) {
+      this.scoreHistory.shift();
+    }
+
+    // Calculate audio level from PCM
+    const rms = Math.sqrt(
+      pcmData.reduce((sum, val) => sum + val * val, 0) / pcmData.length
+    );
+    
+    this.currentLevel = rms;
+    this.currentScore = score;
+  }
+
+  draw() {
+    const { width, height } = this.canvas;
+    this.ctx.clearRect(0, 0, width, height);
+
+    // Draw VAD score history
+    this.ctx.strokeStyle = '#00ff00';
+    this.ctx.beginPath();
+    this.scoreHistory.forEach((score, i) => {
+      const x = (i / this.maxHistory) * width;
+      const y = height - (score * height);
+      if (i === 0) {
+        this.ctx.moveTo(x, y);
+      } else {
+        this.ctx.lineTo(x, y);
+      }
+    });
+    this.ctx.stroke();
+
+    // Draw current level meter
+    const meterWidth = 20;
+    const meterHeight = height * this.currentLevel * 10;
+    this.ctx.fillStyle = this.currentScore > 0.5 ? '#00ff00' : '#ff0000';
+    this.ctx.fillRect(width - meterWidth, height - meterHeight, meterWidth, meterHeight);
+
+    requestAnimationFrame(() => this.draw());
+  }
+
+  stop() {
+    if (this.vadEmitter) {
+      this.vadEmitter.destroy();
+      this.vadEmitter = null;
+    }
+  }
+}
+
+// Usage
+const visualizer = new VADVisualizer('vad-canvas', 'default');
+await visualizer.start(myVadProcessor);
+```
+
+## VAD Processor Interface
+
+Implement the `IVadProcessor` interface for custom VAD algorithms:
+
+```typescript
+interface IVadProcessor {
+  // Return the PCM sample size required by the processor
+  getSampleLength(): number;
+  
+  // Return the required PCM frequency (e.g., 48000 for 48kHz)
+  getRequiredPCMFrequency(): number;
+  
+  // Calculate VAD score for a PCM sample
+  // Returns a number (typically 0-1) indicating voice probability
+  calculateAudioFrameVAD(pcmSample: Float32Array | number[]): number;
+}
+```
+
+## Performance Considerations
+
+<Warning>
+  ScriptProcessorNode is deprecated in favor of AudioWorklet. However, at the time of implementation, AudioWorklet had limited browser support. Consider migrating to AudioWorklet when browser support improves.
+</Warning>
+
+<Info>
+  The `procNodeSampleRate` affects how often `calculateAudioFrameVAD` is called. Lower values (256, 512) provide more frequent updates but higher CPU usage. Higher values (8192, 16384) reduce CPU usage but lower update frequency.
+</Info>
+
+### Buffer Handling
+
+The emitter handles sample size mismatches automatically:
+- If `procNodeSampleRate` doesn't divide evenly by `vadProcessor.getSampleLength()`, residual PCM data is buffered
+- The residue is prepended to the next batch to ensure no audio data is lost
+- This allows flexible combinations of processor sample sizes and node buffer sizes
+
+## Browser Support
+
+- Chrome/Edge 14+
+- Firefox 25+  
+- Safari 6+
+- Opera 15+
+
+<Note>
+  Requires Web Audio API support. The AudioContext is automatically created with the frequency required by your VAD processor.
+</Note>
+
+## Common Use Cases
+
+1. **Active speaker detection** - Identify who is speaking in a conference
+2. **Noise suppression** - Apply processing only when voice is detected
+3. **Audio gating** - Mute audio below a voice activity threshold
+4. **Transcription optimization** - Send audio to speech-to-text only when voice is present
+5. **Audio visualization** - Display real-time voice activity indicators

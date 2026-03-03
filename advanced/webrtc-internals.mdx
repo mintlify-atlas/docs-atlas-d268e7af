@@ -1,0 +1,485 @@
+---
+title: WebRTC Internals
+description: Deep dive into lib-jitsi-meet's WebRTC implementation and peer connection management
+---
+
+# WebRTC Internals
+
+lib-jitsi-meet provides enhanced WebRTC functionality through TraceablePeerConnection and RTCUtils, offering debugging capabilities, browser compatibility, and SDP manipulation.
+
+## TraceablePeerConnection
+
+The `TraceablePeerConnection` class extends the standard RTCPeerConnection with enhanced debugging, logging, and state management.
+
+### Core Features
+
+**Enhanced Debugging**
+- Detailed trace logging for all peer connection events
+- SDP dumping with `TraceablePeerConnection.dumpSDP()`
+- Stats collection and history tracking
+- Update log for all state changes
+
+**Media Management**
+- Local and remote track lifecycle management
+- SSRC mapping and tracking
+- Simulcast and SVC support
+- Codec preference handling
+
+### Creating a Peer Connection
+
+```typescript
+const tpc = new TraceablePeerConnection(
+    rtc,                    // RTC service instance
+    id,                     // Peer connection ID
+    signalingLayer,         // Signaling layer
+    pcConfig,               // RTCConfiguration
+    constraints,            // WebRTC constraints
+    isP2P,                  // P2P or JVB connection
+    options                 // TPC options
+);
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:233-241`
+
+### Configuration Options
+
+```typescript
+interface ITPCOptions {
+    audioQuality: IAudioQuality;          // Audio quality settings
+    capScreenshareBitrate: boolean;       // Limit screenshare bitrate
+    codecSettings: ICodecSettings;        // Codec preferences
+    disableRtx: boolean;                  // Disable RTX
+    disableSimulcast: boolean;            // Disable simulcast
+    maxstats: number;                     // Stats history limit
+    startSilent: boolean;                 // Start without audio
+    usesCodecSelectionAPI: boolean;       // Use codec selection API
+    videoQuality: IVideoQuality;          // Video quality settings
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:85-95`
+
+### Track Management
+
+**Local Tracks**
+- Stored in `localTracks` Map indexed by `rtcId`
+- SSRC info maintained in `localSSRCs` Map
+- Transceiver mapping via `localTrackTransceiverMids`
+
+**Remote Tracks**
+- Indexed by SSRC in `remoteTracksBySsrc` Map
+- Organized by endpoint and media type in `remoteTracks` Map
+- Source name mapping in `remoteSources` Map
+
+Source: `modules/RTC/TraceablePeerConnection.ts:314-364`
+
+### SDP Handling
+
+lib-jitsi-meet performs extensive SDP manipulation for simulcast, codec preferences, and browser compatibility.
+
+**SDP Munging**
+```typescript
+private _mungeDescription(description: RTCSessionDescription): RTCSessionDescription {
+    let mungedSdp = transform.parse(description?.sdp);
+    
+    mungedSdp = this.tpcUtils.mungeOpus(mungedSdp);        // Opus settings
+    mungedSdp = this.tpcUtils.mungeCodecOrder(mungedSdp);  // Codec order
+    mungedSdp = this.tpcUtils.setMaxBitrates(mungedSdp);   // Bitrate limits
+    
+    return new RTCSessionDescription({
+        sdp: transform.write(mungedSdp),
+        type: description.type
+    });
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:877-892`
+
+**Simulcast SDP Munging**
+
+For browsers using SDP-based simulcast (Chrome, Safari):
+```typescript
+if (this.isSpatialScalabilityOn() && browser.usesSdpMungingForSimulcast()) {
+    resultSdp = this.simulcast.mungeLocalDescription(resultSdp);
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:1075-1080`
+
+**RTX SSRC Modification**
+```typescript
+if (!this.options.disableRtx && browser.usesSdpMungingForSimulcast()) {
+    resultSdp = new RTCSessionDescription({
+        sdp: this.rtxModifier.modifyRtxSsrcs(resultSdp?.sdp),
+        type: resultSdp.type
+    });
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:1082-1088`
+
+### Encoding Parameters
+
+lib-jitsi-meet configures RTCRtpEncodingParameters for simulcast and quality control.
+
+**Configure Sender Encodings**
+```typescript
+private async _configureSenderEncodings(localTrack: JitsiLocalTrack): Promise<void> {
+    const transceiver = this.peerconnection.getTransceivers()
+        .find(t => t.sender?.track?.id === localTrack.getTrackId());
+    const parameters = transceiver?.sender?.getParameters();
+    
+    if (!parameters?.encodings?.length) {
+        return;
+    }
+    
+    parameters.encodings = this.tpcUtils.getStreamEncodings(localTrack);
+    await transceiver.sender.setParameters(parameters);
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:669-685`
+
+**Video Sender Configuration**
+
+Dynamically adjust resolution, bitrate, and codec per encoding:
+```typescript
+private _updateVideoSenderEncodings(
+    frameHeight: number,
+    localVideoTrack: JitsiLocalTrack,
+    preferredCodec: CodecMimeType
+): Promise<void> {
+    const parameters = videoSender.getParameters();
+    
+    // Calculate active state, bitrates, scale factors
+    const activeState = this.tpcUtils.calculateEncodingsActiveState(...);
+    const bitrates = this.tpcUtils.calculateEncodingsBitrates(...);
+    const scalabilityModes = this.tpcUtils.calculateEncodingsScalabilityMode(...);
+    const scaleFactors = this.tpcUtils.calculateEncodingsScaleFactor(...);
+    
+    // Apply to encodings
+    for (const encoding of parameters.encodings) {
+        encoding.active = activeState[idx];
+        encoding.maxBitrate = bitrates[idx];
+        encoding.scaleResolutionDownBy = scaleFactors[idx];
+        encoding.scalabilityMode = scalabilityModes[idx];
+        
+        // Codec selection API (Chrome 126+)
+        if (this.usesCodecSelectionAPI()) {
+            encoding.codec = matchingCodec;
+        }
+    }
+    
+    return videoSender.setParameters(parameters);
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:923-1036`
+
+<Warning>
+Chrome resets the transaction ID after `setParameters()`. Chain video sender updates to avoid conflicts:
+
+```typescript
+private _updateVideoSenderParameters(nextFunction: () => void): Promise<void> {
+    const nextPromise = this._lastVideoSenderUpdatePromise.finally(nextFunction);
+    this._lastVideoSenderUpdatePromise = nextPromise;
+    return nextPromise;
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:905-912`
+</Warning>
+
+### Codec Preferences
+
+**Using setCodecPreferences API**
+
+For browsers that support `RTCRtpTransceiver.setCodecPreferences()` (Chrome, Edge):
+```typescript
+if (browser.supportsCodecPreferences() && this.codecSettings) {
+    const { codecList, mediaType } = this.codecSettings;
+    const transceivers = this.peerconnection.getTransceivers()
+        .filter(t => t.receiver?.track?.kind === mediaType);
+    let capabilities = RTCRtpReceiver.getCapabilities(mediaType)?.codecs;
+    
+    // Rearrange codec list per preference order
+    for (const codec of codecList.slice().reverse()) {
+        capabilities.sort(caps => 
+            caps.mimeType.toLowerCase() === `${mediaType}/${codec}` ? -1 : 1
+        );
+    }
+    
+    // Apply to all transceivers
+    for (const transceiver of transceivers) {
+        transceiver.setCodecPreferences(capabilities);
+    }
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:1116-1144`
+
+**Codec Selection API (Chrome 126+)**
+
+Set codec per encoding without renegotiation:
+```typescript
+if (this.usesCodecSelectionAPI()) {
+    const expectedPattern = `${MediaType.VIDEO}/${codec.toUpperCase()}`;
+    const matchingCodec = parameters.codecs.find(pt => pt.mimeType === expectedPattern);
+    encoding.codec = matchingCodec;
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:1007-1023`
+
+## RTCUtils
+
+The RTCUtils singleton handles browser compatibility, device enumeration, and media stream acquisition.
+
+### Initialization
+
+```javascript
+RTCUtils.init({
+    disableAEC: false,          // Acoustic Echo Cancellation
+    disableNS: false,           // Noise Suppression
+    disableAGC: false,          // Automatic Gain Control
+    disableAP: false,           // All audio processing
+    audioQuality: {
+        stereo: false           // Enable stereo audio
+    }
+});
+```
+
+Source: `modules/RTC/RTCUtils.js:274-294`
+
+### Media Constraints
+
+**Default Constraints**
+```javascript
+const DEFAULT_CONSTRAINTS = {
+    video: {
+        frameRate: { max: 30, min: 15 },
+        height: { ideal: 720, max: 720, min: 180 },
+        width: { ideal: 1280, max: 1280, min: 320 }
+    }
+};
+```
+
+Source: `modules/RTC/RTCUtils.js:28-45`
+
+**Constraint Building**
+```javascript
+function getConstraints(um = [], options = {}) {
+    const constraints = cloneDeep(options.constraints || DEFAULT_CONSTRAINTS);
+    
+    if (um.indexOf('video') >= 0) {
+        // Apply resolution shortcuts
+        if (Resolutions[options.resolution]) {
+            const r = Resolutions[options.resolution];
+            constraints.video.height = { ideal: r.height };
+            constraints.video.width = { ideal: r.width };
+        }
+        
+        // WebKit workaround - use only ideal constraints
+        if (browser.isWebKitBased()) {
+            constraints.video.height = { ideal: constraints.video.height.ideal };
+            constraints.video.width = { ideal: constraints.video.width.ideal };
+        }
+        
+        // Device selection
+        if (options.cameraDeviceId) {
+            constraints.video.deviceId = { exact: options.cameraDeviceId };
+        } else if (browser.isMobileDevice()) {
+            constraints.video.facingMode = options.facingMode || CameraFacingMode.USER;
+        }
+    }
+    
+    // Audio constraints with processing flags
+    if (um.indexOf('audio') >= 0) {
+        constraints.audio = {
+            autoGainControl: !disableAGC && !disableAP,
+            echoCancellation: !disableAEC && !disableAP,
+            noiseSuppression: !disableNS && !disableAP
+        };
+        if (stereo) {
+            Object.assign(constraints.audio, { channelCount: 2 });
+        }
+    }
+    
+    return constraints;
+}
+```
+
+Source: `modules/RTC/RTCUtils.js:95-183`
+
+### Device Management
+
+**Device Enumeration**
+```javascript
+enumerateDevices(callback) {
+    navigator.mediaDevices.enumerateDevices()
+        .then(devices => {
+            this._updateKnownDevices(devices);
+            callback(devices);
+        })
+        .catch(error => {
+            logger.warn(`Failed to enumerate devices. ${error}`);
+            this._updateKnownDevices([]);
+            callback([]);
+        });
+}
+```
+
+Source: `modules/RTC/RTCUtils.js:372-383`
+
+**Device Change Detection**
+- Modern browsers: `devicechange` event listener
+- Legacy browsers: 3-second polling interval
+
+Source: `modules/RTC/RTCUtils.js:318-328`
+
+### getUserMedia Wrapper
+
+```javascript
+_getUserMedia(umDevices, constraints = {}, timeout = 0) {
+    return new Promise((resolve, reject) => {
+        let gumTimeout, timeoutExpired = false;
+        
+        if (isValidNumber(timeout) && timeout > 0) {
+            gumTimeout = setTimeout(() => {
+                timeoutExpired = true;
+                reject(new JitsiTrackError(JitsiTrackErrors.TIMEOUT));
+            }, timeout);
+        }
+        
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(stream => {
+                this._updateGrantedPermissions(umDevices, stream);
+                if (!timeoutExpired) {
+                    clearTimeout(gumTimeout);
+                    resolve(stream);
+                }
+            })
+            .catch(error => {
+                const jitsiError = new JitsiTrackError(error, constraints, umDevices);
+                if (!timeoutExpired) {
+                    clearTimeout(gumTimeout);
+                    reject(jitsiError);
+                }
+            });
+    });
+}
+```
+
+Source: `modules/RTC/RTCUtils.js:394-433`
+
+### Audio Output Selection
+
+```javascript
+setAudioOutputDevice(deviceId) {
+    if (!this.isDeviceChangeAvailable('output')) {
+        return Promise.reject(
+            new Error('Audio output device change is not supported')
+        );
+    }
+    
+    return featureDetectionAudioEl.setSinkId(deviceId)
+        .then(() => {
+            audioOutputDeviceId = deviceId;
+            audioOutputChanged = true;
+            this.eventEmitter.emit(RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED, deviceId);
+        });
+}
+```
+
+Source: `modules/RTC/RTCUtils.js:836-852`
+
+## Browser Compatibility
+
+lib-jitsi-meet uses webrtc-adapter for cross-browser compatibility:
+
+```javascript
+import 'webrtc-adapter';
+```
+
+Source: `modules/RTC/RTCUtils.js:3`
+
+<Warning>
+**Safari WebKit Bug Workaround**
+
+On macOS versions before Big Sur, Safari fails to start the camera if min/max constraints are specified. lib-jitsi-meet removes these constraints on WebKit-based browsers:
+
+```javascript
+if (browser.isWebKitBased()) {
+    if (constraints.video.height && constraints.video.height.ideal) {
+        constraints.video.height = { ideal: constraints.video.height.ideal };
+    }
+    if (constraints.video.width && constraints.video.width.ideal) {
+        constraints.video.width = { ideal: constraints.video.width.ideal };
+    }
+}
+```
+
+See: https://bugs.webkit.org/show_bug.cgi?id=210932
+
+Source: `modules/RTC/RTCUtils.js:120-131`
+</Warning>
+
+## Statistics Collection
+
+TraceablePeerConnection maintains stats history for debugging.
+
+**Stats Interval**
+```typescript
+if (this.maxstats) {
+    this.statsinterval = window.setInterval(() => {
+        this.getStats().then((stats: StatsResponse) => {
+            // Process legacy or modern stats format
+            if (typeof (stats as ILegacyStatsResponse)?.result === 'function') {
+                const results = (stats as ILegacyStatsResponse).result();
+                for (const res of results) {
+                    res.names().forEach(name => {
+                        this._processStat(res, name, res.stat(name));
+                    });
+                }
+            } else {
+                (stats as RTCStatsReport).forEach(r => this._processStat(r, '', r));
+            }
+        });
+    }, 1000);
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:587-605`
+
+**Stat Processing**
+```typescript
+_processStat(report: RTCStats, name: string, statValue: any): void {
+    const id = `${report.id}-${name}`;
+    let s = this.stats[id];
+    const now = new Date();
+    
+    if (!s) {
+        this.stats[id] = s = {
+            endTime: now,
+            startTime: now,
+            times: [],
+            values: []
+        };
+    }
+    s.values.push(statValue);
+    s.times.push(now.getTime());
+    if (s.values.length > this.maxstats) {
+        s.values.shift();
+        s.times.shift();
+    }
+    s.endTime = now;
+}
+```
+
+Source: `modules/RTC/TraceablePeerConnection.ts:1223-1243`
+
+## Next Steps
+
+- [XMPP Signaling](/advanced/xmpp-signaling) - Jingle protocol implementation
+- [Codec Selection](/advanced/codec-selection) - Codec preferences and quality
+- [Network Optimization](/advanced/network-optimization) - ICE and connectivity

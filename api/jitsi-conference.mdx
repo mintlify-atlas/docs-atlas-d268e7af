@@ -1,0 +1,591 @@
+---
+title: JitsiConference
+description: Conference session management and media handling
+---
+
+`JitsiConference` represents a multi-user video conference session. It manages participants, media tracks, and conference features like recording, transcription, and quality control.
+
+## Creation
+
+Conferences are created through [JitsiConnection.initJitsiConference()](/api/jitsi-connection#initjitsiconference) or the simplified [JitsiMeetJS.joinConference()](/api/jitsi-meet-js#joinconference) method.
+
+```javascript
+const conference = connection.initJitsiConference('roomname', {
+  openBridgeChannel: true,
+  p2p: { enabled: true },
+  startVideoMuted: 10
+});
+```
+
+## Conference Lifecycle
+
+### join()
+
+Joins the conference.
+
+```javascript
+conference.join(password);
+```
+
+<ParamField path="password" type="string">
+  Optional room password
+</ParamField>
+
+### leave()
+
+Leaves the conference and cleans up resources.
+
+```javascript
+await conference.leave();
+```
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when leave is complete
+</ResponseField>
+
+## Participant Management
+
+### myUserId()
+
+Returns the ID of the local participant.
+
+```javascript
+const myId = conference.myUserId();
+```
+
+<ResponseField name="id" type="string">
+  Local participant ID
+</ResponseField>
+
+### getParticipants()
+
+Returns all remote participants in the conference.
+
+```javascript
+const participants = conference.getParticipants();
+```
+
+<ResponseField name="participants" type="Array<JitsiParticipant>">
+  Array of remote participant objects
+</ResponseField>
+
+### getParticipantById()
+
+Returns a specific participant by ID.
+
+```javascript
+const participant = conference.getParticipantById(participantId);
+```
+
+<ParamField path="id" type="string" required>
+  Participant ID to find
+</ParamField>
+
+<ResponseField name="participant" type="JitsiParticipant | undefined">
+  The participant object, or undefined if not found
+</ResponseField>
+
+### getParticipantCount()
+
+Returns the number of participants (excluding the local user).
+
+```javascript
+const count = conference.getParticipantCount();
+```
+
+<ResponseField name="count" type="number">
+  Number of remote participants
+</ResponseField>
+
+### kickParticipant()
+
+Kicks a participant from the conference (moderator only).
+
+```javascript
+conference.kickParticipant(participantId, reason);
+```
+
+<ParamField path="id" type="string" required>
+  ID of participant to kick
+</ParamField>
+
+<ParamField path="reason" type="string">
+  Optional reason for kicking
+</ParamField>
+
+### grantOwner()
+
+Grants owner/moderator role to a participant (moderator only).
+
+```javascript
+conference.grantOwner(participantId);
+```
+
+<ParamField path="id" type="string" required>
+  ID of participant to grant ownership
+</ParamField>
+
+## Track Management
+
+### addTrack()
+
+Adds a local track to the conference.
+
+```javascript
+await conference.addTrack(track);
+```
+
+<ParamField path="track" type="JitsiLocalTrack" required>
+  Local track to add
+</ParamField>
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when track is added
+</ResponseField>
+
+**Example:**
+
+```javascript
+const tracks = await JitsiMeetJS.createLocalTracks({
+  devices: ['audio', 'video']
+});
+
+for (const track of tracks) {
+  await conference.addTrack(track);
+}
+```
+
+### removeTrack()
+
+Removes a local track from the conference.
+
+```javascript
+await conference.removeTrack(track);
+```
+
+<ParamField path="track" type="JitsiLocalTrack" required>
+  Local track to remove
+</ParamField>
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when track is removed
+</ResponseField>
+
+### replaceTrack()
+
+Replaces one local track with another (e.g., switching cameras).
+
+```javascript
+await conference.replaceTrack(oldTrack, newTrack);
+```
+
+<ParamField path="oldTrack" type="JitsiLocalTrack | null" required>
+  Track to replace, or `null` to add a new track
+</ParamField>
+
+<ParamField path="newTrack" type="JitsiLocalTrack | null" required>
+  New track, or `null` to remove the old track
+</ParamField>
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when replacement is complete
+</ResponseField>
+
+### getLocalTracks()
+
+Returns local tracks added to the conference.
+
+```javascript
+const tracks = conference.getLocalTracks(mediaType);
+```
+
+<ParamField path="mediaType" type="'audio' | 'video'">
+  Optional media type filter
+</ParamField>
+
+<ResponseField name="tracks" type="Array<JitsiLocalTrack>">
+  Array of local tracks
+</ResponseField>
+
+### getLocalAudioTrack()
+
+Gets the local audio track.
+
+```javascript
+const audioTrack = conference.getLocalAudioTrack();
+```
+
+<ResponseField name="track" type="JitsiLocalTrack | undefined">
+  Local audio track, if present
+</ResponseField>
+
+### getLocalVideoTrack()
+
+Gets the local video track.
+
+```javascript
+const videoTrack = conference.getLocalVideoTrack();
+```
+
+<ResponseField name="track" type="JitsiLocalTrack | undefined">
+  Local video track, if present
+</ResponseField>
+
+## Quality & Bandwidth Control
+
+### setReceiverConstraints()
+
+Sets constraints for receiving video streams (resolution, framerate).
+
+```javascript
+conference.setReceiverConstraints({
+  lastN: 5,
+  selectedEndpoints: ['endpoint1', 'endpoint2'],
+  defaultConstraints: { maxHeight: 720 },
+  constraints: {
+    'endpoint1': { maxHeight: 1080 }
+  }
+});
+```
+
+<ParamField path="constraints" type="object" required>
+  <Expandable title="properties">
+    <ParamField path="lastN" type="number">
+      Maximum number of video streams to receive (use -1 for unlimited)
+    </ParamField>
+
+    <ParamField path="selectedEndpoints" type="Array<string>">
+      Endpoint IDs to prioritize
+    </ParamField>
+
+    <ParamField path="onStageSources" type="Array<string>">
+      Source names for on-stage participants
+    </ParamField>
+
+    <ParamField path="defaultConstraints" type="object">
+      Default constraints for all endpoints
+      <Expandable title="properties">
+        <ParamField path="maxHeight" type="number">
+          Maximum video height (e.g., 180, 360, 720, 1080)
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="constraints" type="object">
+      Per-endpoint constraints (key: endpoint ID, value: constraint object)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### setLastN()
+
+Sets the number of video streams to receive.
+
+```javascript
+conference.setLastN(lastN);
+```
+
+<ParamField path="lastN" type="number" required>
+  Number of videos to receive (use -1 for unlimited, 0 to receive none)
+</ParamField>
+
+### getLastN()
+
+Gets the current lastN value.
+
+```javascript
+const lastN = conference.getLastN();
+```
+
+<ResponseField name="lastN" type="number">
+  Current lastN value
+</ResponseField>
+
+### setSenderVideoConstraint()
+
+Sets the maximum resolution to send.
+
+```javascript
+conference.setSenderVideoConstraint(maxHeight);
+```
+
+<ParamField path="maxHeight" type="number" required>
+  Maximum video height to send (e.g., 180, 360, 720, 1080, 2160)
+</ParamField>
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when constraints are applied
+</ResponseField>
+
+## Muting & Moderation
+
+### muteParticipant()
+
+Mutes a participant (moderator only).
+
+```javascript
+conference.muteParticipant(participantId, mediaType);
+```
+
+<ParamField path="id" type="string" required>
+  Participant ID to mute
+</ParamField>
+
+<ParamField path="mediaType" type="'audio' | 'video'" required>
+  Media type to mute
+</ParamField>
+
+### isMutedByFocus()
+
+Checks if the local participant is muted by the moderator.
+
+```javascript
+const muted = conference.isMutedByFocus(mediaType);
+```
+
+<ParamField path="mediaType" type="'audio' | 'video'" required>
+  Media type to check
+</ParamField>
+
+<ResponseField name="muted" type="boolean">
+  `true` if muted by moderator
+</ResponseField>
+
+### isAudioMuted()
+
+Checks if local audio is muted.
+
+```javascript
+const muted = conference.isAudioMuted();
+```
+
+<ResponseField name="muted" type="boolean">
+  `true` if local audio is muted
+</ResponseField>
+
+### isVideoMuted()
+
+Checks if local video is muted.
+
+```javascript
+const muted = conference.isVideoMuted();
+```
+
+<ResponseField name="muted" type="boolean">
+  `true` if local video is muted
+</ResponseField>
+
+## Properties & Settings
+
+### setDisplayName()
+
+Sets the display name of the local participant.
+
+```javascript
+conference.setDisplayName(displayName);
+```
+
+<ParamField path="displayName" type="string" required>
+  Display name to set
+</ParamField>
+
+### setSubject()
+
+Sets the conference subject/title (moderator only).
+
+```javascript
+conference.setSubject(subject);
+```
+
+<ParamField path="subject" type="string" required>
+  Conference subject
+</ParamField>
+
+### getSubject()
+
+Gets the current conference subject.
+
+```javascript
+const subject = conference.getSubject();
+```
+
+<ResponseField name="subject" type="string">
+  Current conference subject
+</ResponseField>
+
+### setLocalParticipantProperty()
+
+Sets a custom property on the local participant.
+
+```javascript
+conference.setLocalParticipantProperty(name, value);
+```
+
+<ParamField path="name" type="string" required>
+  Property name
+</ParamField>
+
+<ParamField path="value" type="any" required>
+  Property value
+</ParamField>
+
+### sendApplicationLog()
+
+Sends application log messages through the conference.
+
+```javascript
+conference.sendApplicationLog(message);
+```
+
+<ParamField path="message" type="string" required>
+  Log message to send
+</ParamField>
+
+## Messaging
+
+### sendTextMessage()
+
+Sends a text message to all participants.
+
+```javascript
+conference.sendTextMessage(text);
+```
+
+<ParamField path="text" type="string" required>
+  Message text
+</ParamField>
+
+### sendPrivateTextMessage()
+
+Sends a private message to a specific participant.
+
+```javascript
+conference.sendPrivateTextMessage(id, text);
+```
+
+<ParamField path="id" type="string" required>
+  Participant ID
+</ParamField>
+
+<ParamField path="text" type="string" required>
+  Message text
+</ParamField>
+
+### sendMessage()
+
+Sends a custom message through the data channel or XMPP.
+
+```javascript
+conference.sendMessage(message, to, sendThroughVideobridge);
+```
+
+<ParamField path="message" type="any" required>
+  Message to send (will be JSON stringified)
+</ParamField>
+
+<ParamField path="to" type="string">
+  Optional recipient ID (broadcasts if omitted)
+</ParamField>
+
+<ParamField path="sendThroughVideobridge" type="boolean" default="false">
+  Send through data channel instead of XMPP
+</ParamField>
+
+## Events
+
+Subscribe to conference events using `conference.on(event, handler)`:
+
+```javascript
+conference.on(
+  JitsiMeetJS.events.conference.CONFERENCE_JOINED,
+  () => {
+    console.log('Joined conference');
+  }
+);
+
+conference.on(
+  JitsiMeetJS.events.conference.USER_JOINED,
+  (id, participant) => {
+    console.log('Participant joined:', participant.getDisplayName());
+  }
+);
+
+conference.on(
+  JitsiMeetJS.events.conference.TRACK_ADDED,
+  (track) => {
+    if (track.isRemote()) {
+      // Attach remote track to DOM
+      track.attach(document.getElementById('video-container'));
+    }
+  }
+);
+```
+
+**Key Events:**
+
+- `CONFERENCE_JOINED` - Successfully joined the conference
+- `CONFERENCE_LEFT` - Left the conference
+- `CONFERENCE_FAILED` - Conference failed `(errorCode: string, error: Error)`
+- `USER_JOINED` - Participant joined `(id: string, participant: JitsiParticipant)`
+- `USER_LEFT` - Participant left `(id: string, participant: JitsiParticipant)`
+- `TRACK_ADDED` - Track added `(track: JitsiTrack)`
+- `TRACK_REMOVED` - Track removed `(track: JitsiTrack)`
+- `TRACK_MUTE_CHANGED` - Track mute status changed `(track: JitsiTrack)`
+- `DISPLAY_NAME_CHANGED` - Participant display name changed `(id: string, name: string)`
+- `DOMINANT_SPEAKER_CHANGED` - Dominant speaker changed `(id: string)`
+- `CONNECTION_INTERRUPTED` - Media connection interrupted
+- `CONNECTION_RESTORED` - Media connection restored
+- `MESSAGE_RECEIVED` - Text message received `(id: string, text: string, ts: number)`
+- `PRIVATE_MESSAGE_RECEIVED` - Private message received `(id: string, text: string, ts: number)`
+
+## Advanced Features
+
+### P2P Mode
+
+Check P2P connection status:
+
+```javascript
+const isP2P = conference.isP2PActive();
+const isP2PEnabled = conference.isP2PEnabled();
+```
+
+### End-to-End Encryption
+
+Manage E2EE:
+
+```javascript
+if (conference.isE2EESupported()) {
+  await conference.toggleE2EE(true);
+  const enabled = conference.isE2EEEnabled();
+}
+```
+
+### Recording
+
+Start/stop recording:
+
+```javascript
+// Start recording
+conference.startRecording({
+  mode: 'file', // or 'stream'
+  appData: JSON.stringify({ customData: 'value' })
+});
+
+// Stop recording
+conference.stopRecording(sessionID);
+```
+
+### Transcription
+
+Manage live transcription:
+
+```javascript
+// Start transcription
+conference.startTranscription();
+
+// Stop transcription
+conference.stopTranscription();
+
+// Set transcription language
+conference.setTranscriptionLanguage('en-US');
+```

@@ -1,0 +1,448 @@
+---
+title: JitsiParticipant
+description: Remote conference participant representation
+---
+
+`JitsiParticipant` represents a remote participant in a conference. It provides access to participant properties, tracks, and features.
+
+## Overview
+
+Participant objects are created automatically by the conference and provided through events. You cannot construct them directly.
+
+```javascript
+conference.on(
+  JitsiMeetJS.events.conference.USER_JOINED,
+  (id, participant) => {
+    console.log('Participant:', participant.getDisplayName());
+  }
+);
+```
+
+## Identity Information
+
+### getId()
+
+Returns the unique identifier of the participant.
+
+```javascript
+const id = participant.getId();
+```
+
+<ResponseField name="id" type="string">
+  Participant's unique ID (typically 8 hex characters)
+</ResponseField>
+
+### getJid()
+
+Returns the full XMPP JID of the participant.
+
+```javascript
+const jid = participant.getJid();
+```
+
+<ResponseField name="jid" type="string">
+  Full JID (e.g., `room@conference.domain/participantId`)
+</ResponseField>
+
+### getDisplayName()
+
+Returns the participant's display name.
+
+```javascript
+const name = participant.getDisplayName();
+```
+
+<ResponseField name="name" type="string">
+  The participant's display name, or empty string if not set
+</ResponseField>
+
+### getStatsID()
+
+Returns the statistics ID for this participant.
+
+```javascript
+const statsId = participant.getStatsID();
+```
+
+<ResponseField name="statsId" type="string">
+  Statistics identifier for analytics
+</ResponseField>
+
+### getStatus()
+
+Returns the participant's status text.
+
+```javascript
+const status = participant.getStatus();
+```
+
+<ResponseField name="status" type="string">
+  Participant's status text
+</ResponseField>
+
+### getIdentity()
+
+Returns the XMPP identity object (defined in JWT context claims).
+
+```javascript
+const identity = participant.getIdentity();
+```
+
+<ResponseField name="identity" type="object | undefined">
+  Identity object from JWT, or undefined if not available
+</ResponseField>
+
+## Role & Permissions
+
+### getRole()
+
+Returns the participant's role.
+
+```javascript
+const role = participant.getRole();
+```
+
+<ResponseField name="role" type="string">
+  Role: `'moderator'`, `'participant'`, or `'none'`
+</ResponseField>
+
+### isModerator()
+
+Checks if the participant is a moderator.
+
+```javascript
+const isMod = participant.isModerator();
+```
+
+<ResponseField name="isModerator" type="boolean">
+  `true` if participant is a moderator
+</ResponseField>
+
+## Track Information
+
+### getTracks()
+
+Returns all media tracks for this participant.
+
+```javascript
+const tracks = participant.getTracks();
+```
+
+<ResponseField name="tracks" type="Array<JitsiRemoteTrack>">
+  Array of all remote tracks from this participant
+</ResponseField>
+
+**Example:**
+
+```javascript
+const tracks = participant.getTracks();
+tracks.forEach(track => {
+  if (track.getType() === 'video') {
+    track.attach(videoElement);
+  }
+});
+```
+
+### getTracksByMediaType()
+
+Returns tracks filtered by media type.
+
+```javascript
+const videoTracks = participant.getTracksByMediaType('video');
+const audioTracks = participant.getTracksByMediaType('audio');
+```
+
+<ParamField path="mediaType" type="'audio' | 'video'" required>
+  Media type to filter
+</ParamField>
+
+<ResponseField name="tracks" type="Array<JitsiRemoteTrack>">
+  Array of tracks of the specified media type
+</ResponseField>
+
+### isAudioMuted()
+
+Checks if the participant's audio is muted.
+
+```javascript
+const muted = participant.isAudioMuted();
+```
+
+<ResponseField name="muted" type="boolean">
+  `true` if audio is muted
+</ResponseField>
+
+### isVideoMuted()
+
+Checks if the participant's video is muted.
+
+```javascript
+const muted = participant.isVideoMuted();
+```
+
+<ResponseField name="muted" type="boolean">
+  `true` if video is muted
+</ResponseField>
+
+## Source Information
+
+### getSources()
+
+Returns source information for all media tracks.
+
+```javascript
+const sources = participant.getSources();
+```
+
+<ResponseField name="sources" type="Map<MediaType, Map<string, object>>">
+  Nested map structure:
+  - Outer key: Media type (`'audio'` or `'video'`)
+  - Inner key: Source name
+  - Inner value: Source info object with `muted` (boolean) and `videoType` (string) properties
+</ResponseField>
+
+**Example:**
+
+```javascript
+const sources = participant.getSources();
+const videoSources = sources.get('video');
+
+if (videoSources) {
+  videoSources.forEach((sourceInfo, sourceName) => {
+    console.log(`Source: ${sourceName}`);
+    console.log(`Muted: ${sourceInfo.muted}`);
+    console.log(`Video Type: ${sourceInfo.videoType}`);
+  });
+}
+```
+
+## Features & Capabilities
+
+### getFeatures()
+
+Returns the set of features supported by this participant.
+
+```javascript
+const features = await participant.getFeatures();
+```
+
+<ResponseField name="features" type="Promise<Set<string>>">
+  Promise resolving to a Set of feature URNs
+</ResponseField>
+
+**Example:**
+
+```javascript
+const features = await participant.getFeatures();
+if (features.has('urn:xmpp:jingle:dtmf:0')) {
+  console.log('Participant supports DTMF');
+}
+```
+
+### hasFeature()
+
+Checks if the participant has a specific feature.
+
+```javascript
+const hasDTMF = participant.hasFeature('urn:xmpp:jingle:dtmf:0');
+```
+
+<ParamField path="feature" type="string" required>
+  Feature URN to check
+</ParamField>
+
+<ResponseField name="hasFeature" type="boolean">
+  `true` if participant has the feature
+</ResponseField>
+
+### supportsDTMF()
+
+Checks if the participant supports DTMF.
+
+```javascript
+const supportsDTMF = participant.supportsDTMF();
+```
+
+<ResponseField name="supports" type="boolean">
+  `true` if DTMF is supported
+</ResponseField>
+
+## Custom Properties
+
+### getProperty()
+
+Gets a custom property value.
+
+```javascript
+const value = participant.getProperty('customKey');
+```
+
+<ParamField path="name" type="string" required>
+  Property name
+</ParamField>
+
+<ResponseField name="value" type="any">
+  Property value, or undefined if not set
+</ResponseField>
+
+**Common Properties:**
+
+```javascript
+// Region information
+const region = participant.getProperty('region');
+
+// Feature flags
+const supportsE2EE = participant.getProperty('features_e2ee');
+const isJigasi = participant.getProperty('features_jigasi');
+
+// Codec preferences
+const codecList = participant.getProperty('codecList');
+```
+
+## Special Participant Types
+
+### isHidden()
+
+Checks if this is a hidden participant (e.g., recorder, transcriber).
+
+```javascript
+const hidden = participant.isHidden();
+```
+
+<ResponseField name="hidden" type="boolean">
+  `true` if participant is hidden from UI
+</ResponseField>
+
+### isHiddenFromRecorder()
+
+Checks if participant should be hidden from recordings.
+
+```javascript
+const hiddenFromRecorder = participant.isHiddenFromRecorder();
+```
+
+<ResponseField name="hidden" type="boolean">
+  `true` if participant should not appear in recordings
+</ResponseField>
+
+### getBotType()
+
+Returns the bot type if this participant is a bot.
+
+```javascript
+const botType = participant.getBotType();
+```
+
+<ResponseField name="botType" type="string | undefined">
+  Bot type (e.g., `'poltergeist'` for load testing bots), or undefined for human participants
+</ResponseField>
+
+### isSilent()
+
+Checks if participant joined without audio.
+
+```javascript
+const silent = participant.isSilent();
+```
+
+<ResponseField name="silent" type="boolean">
+  `true` if participant joined silently (no audio capability)
+</ResponseField>
+
+### isReplacing()
+
+Checks if this participant is replacing another participant.
+
+```javascript
+const replacing = participant.isReplacing();
+```
+
+<ResponseField name="replacing" type="boolean">
+  `true` if participant is replacing another
+</ResponseField>
+
+### isReplaced()
+
+Checks if this participant is being replaced.
+
+```javascript
+const replaced = participant.isReplaced();
+```
+
+<ResponseField name="replaced" type="boolean">
+  `true` if participant will be replaced and kicked
+</ResponseField>
+
+## Connection Information
+
+### getConnectionJid()
+
+Returns the connection JID (useful for visitors/observers).
+
+```javascript
+const connectionJid = participant.getConnectionJid();
+```
+
+<ResponseField name="jid" type="string | undefined">
+  Connection JID, or undefined if not available
+</ResponseField>
+
+### getConference()
+
+Returns the conference this participant belongs to.
+
+```javascript
+const conference = participant.getConference();
+```
+
+<ResponseField name="conference" type="JitsiConference">
+  The parent conference object
+</ResponseField>
+
+## Events
+
+Participant changes are communicated through conference events:
+
+```javascript
+// Participant joined
+conference.on(
+  JitsiMeetJS.events.conference.USER_JOINED,
+  (id, participant) => {
+    console.log(`${participant.getDisplayName()} joined`);
+  }
+);
+
+// Participant left
+conference.on(
+  JitsiMeetJS.events.conference.USER_LEFT,
+  (id, participant) => {
+    console.log(`${participant.getDisplayName()} left`);
+  }
+);
+
+// Display name changed
+conference.on(
+  JitsiMeetJS.events.conference.DISPLAY_NAME_CHANGED,
+  (id, displayName) => {
+    const participant = conference.getParticipantById(id);
+    console.log(`Name changed to: ${displayName}`);
+  }
+);
+
+// Property changed
+conference.on(
+  JitsiMeetJS.events.conference.PARTICIPANT_PROPERTY_CHANGED,
+  (participant, propertyName, oldValue, newValue) => {
+    console.log(`${propertyName} changed from ${oldValue} to ${newValue}`);
+  }
+);
+
+// Role changed
+conference.on(
+  JitsiMeetJS.events.conference.USER_ROLE_CHANGED,
+  (id, role) => {
+    const participant = conference.getParticipantById(id);
+    console.log(`${participant.getDisplayName()} is now ${role}`);
+  }
+);
+```

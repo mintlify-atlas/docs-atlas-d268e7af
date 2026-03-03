@@ -1,0 +1,201 @@
+---
+title: "Track Events"
+description: "Events fired by JitsiTrack for media track lifecycle and state changes"
+---
+
+# JitsiTrackEvents
+
+Events related to individual media tracks (audio and video) including local and remote tracks.
+
+## LOCAL_TRACK_STOPPED
+
+**Event:** `track.stopped`
+
+Fires when the media track has been stopped and removed from the conference.
+
+```javascript
+localTrack.addEventListener(
+  JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,
+  () => {
+    console.log('Track stopped');
+  }
+);
+```
+
+---
+
+## TRACK_MUTE_CHANGED
+
+**Event:** `track.trackMuteChanged`
+
+Fires when the mute status of a media track has changed.
+
+```javascript
+track.addEventListener(
+  JitsiMeetJS.events.track.TRACK_MUTE_CHANGED,
+  () => {
+    console.log('Track muted:', track.isMuted());
+  }
+);
+```
+
+---
+
+## TRACK_AUDIO_LEVEL_CHANGED
+
+**Event:** `track.audioLevelsChanged`
+
+Fires when the audio level of this track has changed.
+
+<ResponseField name="audioLevel" type="number">
+  The audio level value in range [0, 1]
+</ResponseField>
+
+<ResponseField name="tpc" type="TraceablePeerConnection | undefined">
+  The peer connection which measured the audio level. This is optional for local tracks (will be undefined). One audio track can be added to multiple peer connections simultaneously.
+</ResponseField>
+
+<Note>
+  The second argument (TraceablePeerConnection) should be treated as library internal and may be removed at any time.
+</Note>
+
+```javascript
+track.addEventListener(
+  JitsiMeetJS.events.track.TRACK_AUDIO_LEVEL_CHANGED,
+  (audioLevel) => {
+    console.log('Audio level:', audioLevel);
+  }
+);
+```
+
+---
+
+## TRACK_AUDIO_OUTPUT_CHANGED
+
+**Event:** `track.audioOutputChanged`
+
+Fires when the audio output device of the track has changed.
+
+```javascript
+track.addEventListener(
+  JitsiMeetJS.events.track.TRACK_AUDIO_OUTPUT_CHANGED,
+  (deviceId) => {
+    console.log('Audio output changed to:', deviceId);
+  }
+);
+```
+
+---
+
+## TRACK_VIDEOTYPE_CHANGED
+
+**Event:** `track.videoTypeChanged`
+
+Fires when the video type of the track has changed.
+
+<ResponseField name="videoType" type="'camera' | 'desktop'">
+  The new video type - either "camera" for regular video or "desktop" for screen sharing
+</ResponseField>
+
+```javascript
+track.addEventListener(
+  JitsiMeetJS.events.track.TRACK_VIDEOTYPE_CHANGED,
+  (videoType) => {
+    console.log('Video type changed to:', videoType);
+  }
+);
+```
+
+---
+
+## TRACK_STREAMING_STATUS_CHANGED
+
+**Event:** `track.streaming_status_changed`
+
+Fires whenever a video track's streaming status changes. This is particularly useful for remote tracks to understand connection quality and availability.
+
+<ResponseField name="sourceName" type="string">
+  The source name of the track
+</ResponseField>
+
+<ResponseField name="status" type="'active' | 'inactive' | 'interrupted' | 'restoring'">
+  The current streaming status:
+  - **active** - The connection is active
+  - **inactive** - The connection is inactive, intentionally interrupted by the bridge due to low bandwidth or the endpoint falling out of Last N
+  - **interrupted** - A network problem occurred
+  - **restoring** - The connection was inactive and is now restoring
+</ResponseField>
+
+```javascript
+remoteTrack.addEventListener(
+  JitsiMeetJS.events.track.TRACK_STREAMING_STATUS_CHANGED,
+  (sourceName, status) => {
+    console.log(`Track ${sourceName} status:`, status);
+    if (status === 'interrupted') {
+      // Show loading indicator
+    } else if (status === 'active') {
+      // Hide loading indicator
+    }
+  }
+);
+```
+
+<Note>
+  You can obtain the current streaming status by calling `JitsiRemoteTrack.getTrackStreamingStatus()`.
+</Note>
+
+---
+
+## NO_AUDIO_INPUT
+
+**Event:** `track.no_audio_input`
+
+Fires when the local audio track is not receiving any audio input from the currently selected microphone.
+
+```javascript
+localAudioTrack.addEventListener(
+  JitsiMeetJS.events.track.NO_AUDIO_INPUT,
+  () => {
+    console.warn('No audio input detected from microphone');
+    // Prompt user to check their microphone
+  }
+);
+```
+
+---
+
+## NO_DATA_FROM_SOURCE
+
+**Event:** `track.no_data_from_source`
+
+Fires when the track is not receiving any data even though it is expected to receive data (i.e., the stream is not stopped).
+
+```javascript
+track.addEventListener(
+  JitsiMeetJS.events.track.NO_DATA_FROM_SOURCE,
+  () => {
+    console.warn('Track not receiving data from source');
+  }
+);
+```
+
+---
+
+## TRACK_OWNER_SET
+
+**Event:** `track.owner_set`
+
+Fires when a new owner has been assigned to a remote track. This event is only relevant when SSRC rewriting is enabled.
+
+<ResponseField name="participant" type="JitsiParticipant">
+  The participant who now owns the track
+</ResponseField>
+
+```javascript
+remoteTrack.addEventListener(
+  JitsiMeetJS.events.track.TRACK_OWNER_SET,
+  (participant) => {
+    console.log('Track owner set to:', participant.getId());
+  }
+);
+```

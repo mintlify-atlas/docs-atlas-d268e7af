@@ -1,0 +1,144 @@
+---
+title: "Media Device Events"
+description: "Events fired by JitsiMediaDevices for device changes and permissions"
+---
+
+# JitsiMediaDevicesEvents
+
+Events related to media device management, including device connection/disconnection and permission changes.
+
+## DEVICE_LIST_CHANGED
+
+**Event:** `mediaDevices.devicechange`
+
+Fires when the list of available media devices has changed. This includes when devices are connected, disconnected, or become available/unavailable.
+
+<ResponseField name="devices" type="MediaDeviceInfo[]">
+  Array of MediaDeviceInfo or MediaDeviceInfo-like objects representing all currently connected media devices (cameras, microphones, speakers)
+</ResponseField>
+
+```javascript
+JitsiMeetJS.mediaDevices.addEventListener(
+  JitsiMeetJS.events.mediaDevices.DEVICE_LIST_CHANGED,
+  (devices) => {
+    console.log('Available devices:', devices);
+    
+    const cameras = devices.filter(d => d.kind === 'videoinput');
+    const microphones = devices.filter(d => d.kind === 'audioinput');
+    const speakers = devices.filter(d => d.kind === 'audiooutput');
+    
+    console.log(`Cameras: ${cameras.length}`);
+    console.log(`Microphones: ${microphones.length}`);
+    console.log(`Speakers: ${speakers.length}`);
+  }
+);
+```
+
+<Note>
+  See [MediaDeviceInfo](https://developer.mozilla.org/en-US/docs/Web/API/MediaDeviceInfo) for details about the device object structure.
+</Note>
+
+---
+
+## PERMISSIONS_CHANGED
+
+**Event:** `rtc.permissions_changed`
+
+Fires when the user has granted or blocked a permission for the camera or microphone. This event is used to keep track of granted permissions on browsers that don't support the Permissions API.
+
+<ResponseField name="permissions" type="object">
+  Object containing the current permission states for audio and video
+</ResponseField>
+
+```javascript
+JitsiMeetJS.mediaDevices.addEventListener(
+  JitsiMeetJS.events.mediaDevices.PERMISSIONS_CHANGED,
+  (permissions) => {
+    console.log('Permissions changed:', permissions);
+    if (permissions.audio === false) {
+      console.warn('Microphone permission denied');
+    }
+    if (permissions.video === false) {
+      console.warn('Camera permission denied');
+    }
+  }
+);
+```
+
+---
+
+## PERMISSION_PROMPT_IS_SHOWN
+
+**Event:** `mediaDevices.permissionPromptIsShown`
+
+Fires when the browser environment is currently showing a permission prompt to access camera and/or microphone.
+
+<ResponseField name="environmentType" type="'chrome' | 'opera' | 'firefox' | 'safari' | 'nwjs' | 'react-native' | 'android'">
+  The type of browser or execution environment that is showing the permission prompt
+</ResponseField>
+
+```javascript
+JitsiMeetJS.mediaDevices.addEventListener(
+  JitsiMeetJS.events.mediaDevices.PERMISSION_PROMPT_IS_SHOWN,
+  (environmentType) => {
+    console.log('Permission prompt shown in:', environmentType);
+    // Show UI hint to user about granting permissions
+  }
+);
+```
+
+---
+
+## Usage Example
+
+Here's a complete example of handling media device events:
+
+```javascript
+// Initialize Jitsi Meet
+JitsiMeetJS.init();
+
+const mediaDevices = JitsiMeetJS.mediaDevices;
+
+// Listen for device changes
+mediaDevices.addEventListener(
+  JitsiMeetJS.events.mediaDevices.DEVICE_LIST_CHANGED,
+  (devices) => {
+    updateDeviceList(devices);
+  }
+);
+
+// Listen for permission changes
+mediaDevices.addEventListener(
+  JitsiMeetJS.events.mediaDevices.PERMISSIONS_CHANGED,
+  (permissions) => {
+    if (!permissions.audio || !permissions.video) {
+      showPermissionError();
+    }
+  }
+);
+
+// Listen for permission prompts
+mediaDevices.addEventListener(
+  JitsiMeetJS.events.mediaDevices.PERMISSION_PROMPT_IS_SHOWN,
+  (browser) => {
+    showPermissionPromptHint(browser);
+  }
+);
+
+// Enumerate devices initially
+mediaDevices.enumerateDevices((devices) => {
+  updateDeviceList(devices);
+});
+
+function updateDeviceList(devices) {
+  // Update your UI with available devices
+  const videoInputs = devices.filter(d => d.kind === 'videoinput');
+  const audioInputs = devices.filter(d => d.kind === 'audioinput');
+  const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+  
+  // Populate device selection dropdowns
+  populateCameraSelect(videoInputs);
+  populateMicrophoneSelect(audioInputs);
+  populateSpeakerSelect(audioOutputs);
+}
+```

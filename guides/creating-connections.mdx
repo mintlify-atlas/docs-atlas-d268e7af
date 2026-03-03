@@ -1,0 +1,328 @@
+---
+title: Creating Connections
+description: Learn how to establish connections to Jitsi Meet servers
+---
+
+This guide covers how to create and manage connections to Jitsi Meet servers using the `JitsiConnection` class.
+
+## Overview
+
+The `JitsiConnection` class provides access to the Jitsi Meet server-side video conferencing service. It handles XMPP connection establishment, authentication, and provides the foundation for creating conferences.
+
+## Creating a Connection
+
+<Steps>
+
+<Step title="Initialize JitsiMeetJS">
+First, initialize the library with your configuration:
+
+```javascript
+JitsiMeetJS.init({
+    disableAudioLevels: false,
+    enableAnalyticsLogging: false
+});
+```
+</Step>
+
+<Step title="Configure connection options">
+Define your connection options:
+
+```javascript
+const options = {
+    serviceUrl: 'wss://your-server.com/xmpp-websocket',
+    hosts: {
+        domain: 'your-server.com'
+    },
+    enableWebsocketResume: true,
+    websocketKeepAlive: 60000,
+    websocketKeepAliveUrl: 'https://your-server.com/about/health',
+    p2pStunServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+};
+```
+</Step>
+
+<Step title="Create the connection instance">
+Instantiate a new connection:
+
+```javascript
+const connection = new JitsiMeetJS.JitsiConnection(
+    null,              // appID (optional)
+    null,              // JWT token (optional) 
+    options
+);
+```
+</Step>
+
+<Step title="Register event handlers">
+Set up event listeners before connecting:
+
+```javascript
+connection.addEventListener(
+    JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+    onConnectionSuccess
+);
+
+connection.addEventListener(
+    JitsiMeetJS.events.connection.CONNECTION_FAILED,
+    onConnectionFailed
+);
+
+connection.addEventListener(
+    JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
+    onDisconnect
+);
+```
+</Step>
+
+<Step title="Connect to the server">
+Initiate the connection:
+
+```javascript
+connection.connect({
+    id: 'user@domain.com',      // Optional: username for authentication
+    password: 'password',        // Optional: password for authentication
+    name: 'conferenceRoom'       // Optional: room name for HTTP conference request
+});
+```
+</Step>
+
+</Steps>
+
+## Connection Options
+
+### Required Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `serviceUrl` | string | WebSocket URL for XMPP connection |
+| `hosts.domain` | string | XMPP domain name |
+| `enableWebsocketResume` | boolean | Enable WebSocket session resumption |
+| `p2pStunServers` | array | STUN servers for P2P connections |
+
+### Optional Options
+
+```typescript
+interface IConnectionOptions {
+    analytics?: any;
+    bridgeChannel?: {
+        ignoreDomain?: string;
+        preferSctp?: boolean;
+    };
+    disableFocus?: boolean;
+    flags?: Record<string, any>;
+    name?: string;
+    websocketKeepAlive?: number;
+    websocketKeepAliveUrl?: string;
+    xmppPing?: any;
+}
+```
+
+## Authentication
+
+### Anonymous Connection
+
+Connect without credentials:
+
+```javascript
+connection.connect();
+```
+
+### Authenticated Connection
+
+Connect with username and password:
+
+```javascript
+connection.connect({
+    id: 'moderator@domain.com',
+    password: 'secure-password'
+});
+```
+
+### JWT Token Authentication
+
+Provide a JWT token during connection creation:
+
+```javascript
+const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+const connection = new JitsiMeetJS.JitsiConnection(
+    'your-app-id',
+    token,
+    options
+);
+
+connection.connect();
+```
+
+## Event Handlers
+
+<CodeGroup>
+
+```javascript Connection Established
+function onConnectionSuccess() {
+    console.log('Successfully connected!');
+    // Now you can create a conference
+    const conference = connection.initJitsiConference('room-name', {});
+}
+```
+
+```javascript Connection Failed
+function onConnectionFailed(errorType, message, credentials, details) {
+    console.error('Connection failed:', errorType, message);
+    // Handle specific error types
+    switch(errorType) {
+        case JitsiMeetJS.errors.connection.PASSWORD_REQUIRED:
+            console.log('Password authentication required');
+            break;
+        case JitsiMeetJS.errors.connection.OTHER_ERROR:
+            console.log('Connection error:', message);
+            break;
+    }
+}
+```
+
+```javascript Connection Disconnected
+function onDisconnect(message) {
+    console.log('Disconnected:', message);
+    // Clean up resources
+}
+```
+
+</CodeGroup>
+
+## Managing Connections
+
+### Disconnect
+
+Properly close the connection:
+
+```javascript
+connection.disconnect().then(() => {
+    console.log('Disconnected successfully');
+}).catch(error => {
+    console.error('Error during disconnect:', error);
+});
+```
+
+### Refresh Authentication Token
+
+Renew JWT tokens before expiration:
+
+```javascript
+const newToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+
+connection.refreshToken(newToken).then(() => {
+    console.log('Token refreshed successfully');
+}).catch(error => {
+    console.error('Failed to refresh token:', error);
+});
+```
+
+### Get Connection Info
+
+Retrieve connection details:
+
+```javascript
+// Get participant JID
+const jid = connection.getJid();
+console.log('My JID:', jid);
+
+// Get connection timing information
+const times = connection.getConnectionTimes();
+console.log('Connection times:', times);
+```
+
+## Feature Management
+
+Advertise client capabilities:
+
+```javascript
+// Add a feature
+connection.addFeature('urn:xmpp:jingle:apps:dtls:0', true);
+
+// Remove a feature
+connection.removeFeature('urn:xmpp:jingle:apps:dtls:0', true);
+```
+
+## Attaching to Existing Sessions
+
+For optimized reconnection, attach to an existing XMPP session:
+
+```javascript
+const attachOptions = {
+    jid: 'user@domain.com/resource',
+    sid: 'session-id',
+    rid: 'request-id'
+};
+
+connection.attach(attachOptions);
+```
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Handle reconnection gracefully">
+Implement exponential backoff for reconnection attempts:
+
+```javascript
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
+
+function reconnect() {
+    if (reconnectAttempts < maxReconnectAttempts) {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        setTimeout(() => {
+            reconnectAttempts++;
+            connection.connect();
+        }, delay);
+    }
+}
+
+connection.addEventListener(
+    JitsiMeetJS.events.connection.CONNECTION_FAILED,
+    reconnect
+);
+```
+</Accordion>
+
+<Accordion title="Monitor connection quality">
+Use connection statistics to monitor quality:
+
+```javascript
+const logs = connection.getLogs();
+console.log('Connection logs:', logs);
+```
+</Accordion>
+
+<Accordion title="Clean up resources">
+Always remove event listeners when done:
+
+```javascript
+function cleanup() {
+    connection.removeEventListener(
+        JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+        onConnectionSuccess
+    );
+    connection.removeEventListener(
+        JitsiMeetJS.events.connection.CONNECTION_FAILED,
+        onConnectionFailed
+    );
+}
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Managing Conferences" icon="users" href="/guides/managing-conferences">
+    Learn how to create and manage conferences
+  </Card>
+  <Card title="Handling Media Tracks" icon="video" href="/guides/handling-media-tracks">
+    Work with audio and video tracks
+  </Card>
+</CardGroup>

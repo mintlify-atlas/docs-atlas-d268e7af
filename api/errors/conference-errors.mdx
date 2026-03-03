@@ -1,0 +1,557 @@
+---
+title: JitsiConferenceErrors
+description: Conference error constants and handling for lib-jitsi-meet
+---
+
+Conference errors that can occur when joining, managing, or participating in Jitsi conferences.
+
+## Error Constants
+
+### AUTHENTICATION_REQUIRED
+
+**Value:** `conference.authenticationRequired`
+
+**Cause:** Client must be authenticated to create the conference.
+
+**When it occurs:**
+- Conference requires authenticated users
+- Token-based authentication is enabled but not provided
+- JWT authentication is required
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.AUTHENTICATION_REQUIRED) {
+    // Redirect to authentication flow
+    window.location.href = '/login?redirect=' + encodeURIComponent(roomName);
+  }
+});
+```
+
+---
+
+### CHAT_ERROR
+
+**Value:** `conference.chatError`
+
+**Cause:** An error occurred in chat functionality.
+
+**When it occurs:**
+- Chat message fails to send
+- XMPP MUC chat errors
+- Message validation failures
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_ERROR, (error, ...params) => {
+  if (error === JitsiConferenceErrors.CHAT_ERROR) {
+    console.warn('Chat error occurred:', params);
+    // Notify user that message may not have been delivered
+    showChatErrorNotification();
+  }
+});
+```
+
+---
+
+### CONFERENCE_ACCESS_DENIED
+
+**Value:** `conference.connectionError.accessDenied`
+
+**Cause:** Access to the room was denied after joining a lobby room.
+
+**When it occurs:**
+- Moderators reject entry from lobby
+- User is explicitly denied access
+- Access control rules prevent entry
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.CONFERENCE_ACCESS_DENIED) {
+    // Inform user they were denied access
+    showNotification('Access denied by moderator.');
+    // Leave the lobby and redirect
+    room.leave().then(() => redirectToHomePage());
+  }
+});
+```
+
+---
+
+### CONFERENCE_DESTROYED
+
+**Value:** `conference.destroyed`
+
+**Cause:** Conference has been destroyed.
+
+**When it occurs:**
+- All participants have left
+- Conference was explicitly terminated
+- Server shutdown the conference
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.CONFERENCE_DESTROYED) {
+    // Clean up and notify user
+    console.info('Conference has ended.');
+    cleanupResources();
+    showEndOfConferenceMessage();
+  }
+});
+```
+
+---
+
+### CONFERENCE_MAX_USERS
+
+**Value:** `conference.max_users`
+
+**Cause:** Maximum users limit has been reached.
+
+**When it occurs:**
+- Conference has reached participant capacity
+- Server-side user limits enforced
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.CONFERENCE_MAX_USERS) {
+    // Inform user conference is full
+    showNotification('Conference is full. Please try again later.');
+    // Optionally offer to join waiting list
+  }
+});
+```
+
+---
+
+### CONNECTION_ERROR
+
+**Value:** `conference.connectionError`
+
+**Cause:** A connection error occurred when trying to join a conference.
+
+**When it occurs:**
+- Network connectivity issues
+- XMPP connection problems
+- WebSocket/BOSH transport failures
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.CONNECTION_ERROR) {
+    // Attempt reconnection
+    console.error('Failed to connect to conference.');
+    retryJoinWithBackoff();
+  }
+});
+```
+
+---
+
+### DISPLAY_NAME_REQUIRED
+
+**Value:** `conference.display_name_required`
+
+**Cause:** Display name is required when joining the room (common in lobby scenarios).
+
+**When it occurs:**
+- Lobby is enabled and requires display names
+- Conference settings mandate participant names
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error, ...params) => {
+  if (error === JitsiConferenceErrors.DISPLAY_NAME_REQUIRED) {
+    const lobbyEnabled = params[0]; // boolean indicating if lobby is enabled
+    // Prompt user for display name
+    const displayName = await promptForDisplayName();
+    room.setDisplayName(displayName);
+    room.join();
+  }
+});
+```
+
+---
+
+### FOCUS_DISCONNECTED
+
+**Value:** `conference.focusDisconnected`
+
+**Cause:** Focus (jicofo) error occurred.
+
+**When it occurs:**
+- Jicofo service becomes unavailable
+- Connection to focus component lost
+- Conference orchestration failures
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.FOCUS_DISCONNECTED) {
+    // Wait for focus to reconnect or rejoin
+    console.warn('Focus disconnected. Attempting to rejoin...');
+    setTimeout(() => rejoinConference(), 3000);
+  }
+});
+```
+
+---
+
+### FOCUS_LEFT
+
+**Value:** `conference.focusLeft`
+
+**Cause:** Focus component left the conference.
+
+**When it occurs:**
+- Jicofo intentionally left the conference
+- Conference is shutting down gracefully
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.FOCUS_LEFT) {
+    // Conference is ending
+    console.info('Conference is ending (focus left).');
+    cleanupAndExit();
+  }
+});
+```
+
+---
+
+### GRACEFUL_SHUTDOWN
+
+**Value:** `conference.gracefulShutdown`
+
+**Cause:** Graceful shutdown is happening.
+
+**When it occurs:**
+- Server maintenance scheduled
+- Infrastructure upgrade in progress
+- Conference being migrated
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.GRACEFUL_SHUTDOWN) {
+    // Notify user of planned shutdown
+    showNotification('Server maintenance in progress. Please rejoin.');
+    // Implement reconnection after brief delay
+    setTimeout(() => reconnect(), 5000);
+  }
+});
+```
+
+---
+
+### ICE_FAILED
+
+**Value:** `conference.iceFailed`
+
+**Cause:** The media connection (ICE) has failed.
+
+**When it occurs:**
+- WebRTC peer connection cannot establish
+- Firewall blocking UDP/TCP media ports
+- TURN server unavailable or misconfigured
+- Network address translation (NAT) issues
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.ICE_FAILED) {
+    // Media connection failed - check network/firewall
+    console.error('Media connection failed (ICE failure).');
+    showNetworkDiagnostics();
+    // Suggest checking firewall settings or using different network
+  }
+});
+```
+
+---
+
+### INCOMPATIBLE_SERVER_VERSIONS
+
+**Value:** `conference.incompatible_server_versions`
+
+**Cause:** Server-side component versions are incompatible with the client.
+
+**When it occurs:**
+- Client library version doesn't match server expectations
+- Server components out of sync
+- Major version mismatch
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.INCOMPATIBLE_SERVER_VERSIONS) {
+    // Client needs to be updated
+    console.error('Client version incompatible with server.');
+    showUpdateRequiredMessage();
+    // Force page reload to get latest client version
+    setTimeout(() => window.location.reload(true), 2000);
+  }
+});
+```
+
+---
+
+### MEMBERS_ONLY_ERROR
+
+**Value:** `conference.connectionError.membersOnly`
+
+**Cause:** Connection error due to members-only restriction (only approved members allowed).
+
+**When it occurs:**
+- Conference is restricted to specific members
+- User is not on the approved members list
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.MEMBERS_ONLY_ERROR) {
+    // User is not an approved member
+    showNotification('This conference is restricted to members only.');
+    redirectToHomePage();
+  }
+});
+```
+
+---
+
+### NOT_ALLOWED_ERROR
+
+**Value:** `conference.connectionError.notAllowed`
+
+**Cause:** Connection error due to not being allowed to join.
+
+**When it occurs:**
+- Various authorization failures (see AUTH_ERROR_TYPES)
+- Room creation restrictions
+- Authentication requirements not met
+- Visitor lobby restrictions
+
+**Additional context via AUTH_ERROR_TYPES:**
+- `GENERAL` - General authorization failure
+- `NO_MAIN_PARTICIPANTS` - No main participants available
+- `NO_VISITORS_LOBBY` - Visitors not allowed in lobby
+- `PROMOTION_NOT_ALLOWED` - Promotion from visitor not allowed
+- `ROOM_CREATION_RESTRICTION` - Room creation is restricted
+- `ROOM_UNAUTHENTICATED_ACCESS_DISABLED` - Authentication required
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error, ...params) => {
+  if (error === JitsiConferenceErrors.NOT_ALLOWED_ERROR) {
+    const authErrorType = params[0]; // AUTH_ERROR_TYPES value
+    
+    switch (authErrorType) {
+      case 'authentication-required':
+        redirectToLogin();
+        break;
+      case 'room-creation-restriction':
+        showNotification('You do not have permission to create rooms.');
+        break;
+      default:
+        showNotification('You are not allowed to join this conference.');
+    }
+  }
+});
+```
+
+---
+
+### OFFER_ANSWER_FAILED
+
+**Value:** `conference.offerAnswerFailed`
+
+**Cause:** WebRTC offer/answer negotiation failed.
+
+**When it occurs:**
+- SDP negotiation failures
+- Codec mismatch between peers
+- Media capability incompatibilities
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.OFFER_ANSWER_FAILED) {
+    // WebRTC negotiation failed
+    console.error('Failed to negotiate media connection.');
+    // Retry joining the conference
+    retryJoin();
+  }
+});
+```
+
+---
+
+### PASSWORD_NOT_SUPPORTED
+
+**Value:** `conference.passwordNotSupported`
+
+**Cause:** Password cannot be set for this conference.
+
+**When it occurs:**
+- Server doesn't support password-protected rooms
+- Configuration prevents password usage
+
+**Handling recommendations:**
+```javascript
+try {
+  await room.lock(password);
+} catch (error) {
+  if (error === JitsiConferenceErrors.PASSWORD_NOT_SUPPORTED) {
+    showNotification('Password protection is not available.');
+  }
+}
+```
+
+---
+
+### PASSWORD_REQUIRED
+
+**Value:** `conference.passwordRequired`
+
+**Cause:** A password is required to join the conference.
+
+**When it occurs:**
+- Conference room is password-protected
+- Joining without password credentials
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.PASSWORD_REQUIRED) {
+    // Prompt for password and rejoin
+    const password = await promptForPassword();
+    room.join(password);
+  }
+});
+```
+
+---
+
+### RESERVATION_ERROR
+
+**Value:** `conference.reservationError`
+
+**Cause:** Reservation system returned an error.
+
+**When it occurs:**
+- Conference reservation failed
+- Booking system integration issues
+- Reservation conflicts or validation failures
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.RESERVATION_ERROR) {
+    console.error('Conference reservation failed.');
+    showNotification('Unable to reserve conference. Please try again.');
+  }
+});
+```
+
+---
+
+### SETTINGS_ERROR
+
+**Value:** `conference.settingsError`
+
+**Cause:** A settings error occurred.
+
+**When it occurs:**
+- Invalid conference settings
+- Configuration validation failures
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_ERROR, (error) => {
+  if (error === JitsiConferenceErrors.SETTINGS_ERROR) {
+    console.warn('Conference settings error.');
+    // Review and fix settings
+  }
+});
+```
+
+---
+
+### VIDEOBRIDGE_NOT_AVAILABLE
+
+**Value:** `conference.videobridgeNotAvailable`
+
+**Cause:** No available videobridge to handle the conference.
+
+**When it occurs:**
+- All videobridges are at capacity
+- Videobridge services are down
+- Infrastructure scaling issues
+
+**Handling recommendations:**
+```javascript
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+  if (error === JitsiConferenceErrors.VIDEOBRIDGE_NOT_AVAILABLE) {
+    console.error('No videobridge available.');
+    showNotification('Service is at capacity. Please try again shortly.');
+    // Implement retry with exponential backoff
+    scheduleRetry();
+  }
+});
+```
+
+## Usage Example
+
+```javascript
+import { JitsiConferenceErrors, JitsiConferenceEvents } from 'lib-jitsi-meet';
+
+room.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error, ...params) => {
+  console.error('Conference failed:', error, params);
+  
+  switch (error) {
+    case JitsiConferenceErrors.AUTHENTICATION_REQUIRED:
+      handleAuthRequired();
+      break;
+    case JitsiConferenceErrors.PASSWORD_REQUIRED:
+      handlePasswordRequired();
+      break;
+    case JitsiConferenceErrors.CONFERENCE_ACCESS_DENIED:
+      handleAccessDenied();
+      break;
+    case JitsiConferenceErrors.CONFERENCE_MAX_USERS:
+      handleConferenceFull();
+      break;
+    case JitsiConferenceErrors.ICE_FAILED:
+      handleMediaConnectionFailure();
+      break;
+    default:
+      handleGenericConferenceError(error, params);
+  }
+});
+```
+
+## AUTH_ERROR_TYPES
+
+Additional error type information for `NOT_ALLOWED_ERROR`:
+
+```javascript
+export enum AUTH_ERROR_TYPES {
+  GENERAL = 'general',
+  NO_MAIN_PARTICIPANTS = 'no-main-participants',
+  NO_VISITORS_LOBBY = 'no-visitors-lobby',
+  PROMOTION_NOT_ALLOWED = 'promotion-not-allowed',
+  ROOM_CREATION_RESTRICTION = 'room-creation-restriction',
+  ROOM_UNAUTHENTICATED_ACCESS_DISABLED = 'authentication-required'
+}
+```
+
+## See Also
+
+- [JitsiConference API](/api/jitsi-conference)
+- [Conference Events](/api/events/conference-events)
+- [Connection Errors](/api/errors/connection-errors)
+- [Track Errors](/api/errors/track-errors)

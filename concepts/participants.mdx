@@ -1,0 +1,608 @@
+---
+title: JitsiParticipant
+description: Participant properties, roles, and track management
+---
+
+The `JitsiParticipant` class represents a participant (member) in a conference, containing information about their identity, role, tracks, and custom properties.
+
+## Overview
+
+`JitsiParticipant` provides:
+
+- Participant identity and metadata
+- Role management (moderator, participant)
+- Track management (audio/video tracks)
+- Custom properties for extensibility  
+- Feature capabilities
+- Source information for tracks
+
+## Participant Structure
+
+From `JitsiParticipant.ts:18-50`:
+
+<CodeGroup>
+```typescript Participant Class
+export default class JitsiParticipant {
+    private _jid: string;                          // XMPP JID
+    private _id: string;                           // Endpoint ID (resource part)
+    private _conference: JitsiConference;
+    private _role: string;                         // 'moderator' or 'none'
+    private _hidden: boolean;                      // Hidden participant flag
+    private _statsID?: string;                     // Statistics ID
+    private _properties: Map<string, any>;         // Custom properties
+    private _identity?: object;                    // XMPP identity (from JWT)
+    private _features: Set<string>;                // Supported features
+    private _sources: Map<MediaType, Map<string, ISourceInfo>>;  // Track sources
+    private _botType?: string;                     // Bot type if applicable
+    
+    _displayName: string;                          // Display name
+    _supportsDTMF: boolean;                        // DTMF support flag
+    _tracks: JitsiRemoteTrack[];                   // Participant's tracks
+    _status?: string;                              // Participant status
+}
+```
+</CodeGroup>
+
+## Constructor
+
+From `JitsiParticipant.ts:69-110`:
+
+```typescript
+constructor(
+    jid: string,              // Conference XMPP JID
+    conference: JitsiConference,
+    displayName: string,
+    hidden: boolean,          // True for hidden participants (e.g., recorder)
+    statsID?: string,         // Optional statistics ID
+    status?: string,          // Initial status
+    identity?: object,        // XMPP identity from JWT context
+    isReplacing?: boolean,    // Whether replacing another participant
+    isReplaced?: boolean,     // Whether being replaced
+    isSilent?: boolean        // Whether joined without audio
+) {
+    this._jid = jid;
+    this._id = Strophe.getResourceFromJid(jid);  // Extract endpoint ID
+    this._conference = conference;
+    this._displayName = displayName;
+    this._role = 'none';
+    this._tracks = [];
+    this._properties = new Map();
+    this._features = new Set();
+    this._sources = new Map();
+}
+```
+
+<Info>
+The participant ID (`_id`) is extracted from the resource part of the JID using `Strophe.getResourceFromJid()`. This is an 8-character hexadecimal string used as the endpoint ID.
+</Info>
+
+## Getting Participants
+
+Participants are managed through the conference:
+
+```typescript
+// Get all participants (excluding local)
+const participants = conference.getParticipants();
+
+// Get specific participant by ID
+const participant = conference.getParticipantById(participantId);
+
+// Get participant count
+const count = conference.getParticipantCount();
+```
+
+## Participant Identity
+
+### Basic Information
+
+```typescript
+// Get participant ID (endpoint ID)
+const id = participant.getId();
+
+// Get display name
+const displayName = participant.getDisplayName();
+
+// Get full JID
+const jid = participant.getJid();
+
+// Get statistics ID  
+const statsID = participant.getStatsID();
+
+// Get status
+const status = participant.getStatus();
+```
+
+From `JitsiParticipant.ts:182-253`:
+
+<CodeGroup>
+```typescript Identity Methods
+getDisplayName(): string {
+    return this._displayName;
+}
+
+getId(): string {
+    return this._id;
+}
+
+getJid(): string {
+    return this._jid;
+}
+
+getStatsID(): string {
+    return this._statsID;
+}
+
+getStatus(): string {
+    return this._status;
+}
+```
+</CodeGroup>
+
+### XMPP Identity
+
+The identity object contains JWT context claims:
+
+```typescript
+const identity = participant.getIdentity();
+
+// Identity structure (example):
+{
+    user: {
+        id: 'user-id',
+        name: 'User Name',
+        email: 'user@example.com',
+        avatar: 'https://example.com/avatar.jpg',
+        'hidden-from-recorder': 'true'  // Custom claims
+    }
+}
+```
+
+From `JitsiParticipant.ts:207-210`:
+
+```typescript
+getIdentity(): Optional<object> {
+    return this._identity;
+}
+```
+
+### Connection Information
+
+```typescript
+// Get connection JID (bridge connection)
+const connectionJid = participant.getConnectionJid();
+
+// Get bot type (if participant is a bot)
+const botType = participant.getBotType();
+```
+
+## Participant Role
+
+Participants can be moderators or regular participants:
+
+```typescript
+// Get role
+const role = participant.getRole();  // 'moderator' or 'none'
+
+// Check if moderator
+const isModerator = participant.isModerator();
+
+// Listen for role changes
+conference.on(JitsiConferenceEvents.USER_ROLE_CHANGED, (id, role) => {
+    console.log(`Participant ${id} role changed to ${role}`);
+});
+```
+
+From `JitsiParticipant.ts:227-231` and `JitsiParticipant.ts:309-312`:
+
+```typescript
+getRole(): string {
+    return this._role;
+}
+
+isModerator(): boolean {
+    return this._role === 'moderator';
+}
+```
+
+## Participant Tracks
+
+### Getting Tracks
+
+From `JitsiParticipant.ts:256-270`:
+
+```typescript
+// Get all tracks
+const tracks = participant.getTracks();
+
+// Get tracks by media type
+const audioTracks = participant.getTracksByMediaType(MediaType.AUDIO);
+const videoTracks = participant.getTracksByMediaType(MediaType.VIDEO);
+
+// Check track count
+console.log('Participant has', tracks.length, 'tracks');
+```
+
+<CodeGroup>
+```typescript Track Methods
+getTracks(): (JitsiRemoteTrack)[] {
+    return this._tracks.slice();  // Return copy of array
+}
+
+getTracksByMediaType(mediaType: MediaType): (JitsiRemoteTrack)[] {
+    return this.getTracks().filter(track => track.getType() === mediaType);
+}
+```
+</CodeGroup>
+
+### Mute State
+
+Check if participant is muted:
+
+```typescript
+// Check audio mute
+const isAudioMuted = participant.isAudioMuted();
+
+// Check video mute
+const isVideoMuted = participant.isVideoMuted();
+```
+
+From `JitsiParticipant.ts:121-126` and `JitsiParticipant.ts:284-287`:
+
+```typescript
+private _isMediaTypeMuted(mediaType: MediaType): boolean {
+    return this.getTracks().reduce(
+        (muted, track) =>
+            muted && (track.getType() !== mediaType || track.isMuted()),
+        true
+    );
+}
+
+isAudioMuted(): boolean {
+    return this._isMediaTypeMuted(MediaType.AUDIO);
+}
+
+isVideoMuted(): boolean {
+    return this._isMediaTypeMuted(MediaType.VIDEO);
+}
+```
+
+## Track Sources
+
+Participants can have multiple sources (tracks) of the same media type:
+
+From `JitsiParticipant.ts:10-13` and `JitsiParticipant.ts:98-109`:
+
+```typescript
+interface ISourceInfo {
+    muted: boolean;      // Source mute state
+    videoType: string;   // 'camera' or 'desktop'
+}
+
+// Source structure:
+// Map<mediaType, Map<sourceName, ISourceInfo>>
+// Example: Map<'video', Map<'participant-v0', { muted: false, videoType: 'camera' }>>
+
+const sources = participant.getSources();
+
+// Iterate over sources
+for (const [mediaType, sourceMap] of sources) {
+    console.log(`Media type: ${mediaType}`);
+    for (const [sourceName, sourceInfo] of sourceMap) {
+        console.log(`  Source: ${sourceName}`);
+        console.log(`  Muted: ${sourceInfo.muted}`);
+        console.log(`  Video type: ${sourceInfo.videoType}`);
+    }
+}
+```
+
+<Note>
+Source information is updated through the signaling layer when participants add, remove, or modify their tracks. The `PARTICIPANT_SOURCE_UPDATED` event fires when sources change.
+</Note>
+
+## Custom Properties
+
+Participants can have custom properties for application-specific data:
+
+```typescript
+// Get property
+const customValue = participant.getProperty('propertyName');
+
+// Listen for property changes
+conference.on(
+    JitsiConferenceEvents.PARTICIPANT_PROPERTY_CHANGED,
+    (participant, propertyName, oldValue, newValue) => {
+        console.log(`${propertyName} changed from ${oldValue} to ${newValue}`);
+    }
+);
+```
+
+From `JitsiParticipant.ts:221-224` and `JitsiParticipant.ts:398-410`:
+
+```typescript
+getProperty(name: string): any {
+    return this._properties.get(name);
+}
+
+setProperty(name: string, value: any): void {
+    const oldValue = this._properties.get(name);
+
+    if (value !== oldValue) {
+        this._properties.set(name, value);
+        this._conference.eventEmitter.emit(
+            JitsiConferenceEvents.PARTICIPANT_PROPERTY_CHANGED,
+            this,
+            name,
+            oldValue,
+            value
+        );
+    }
+}
+```
+
+Common properties:
+- `region` - Participant's geographic region
+- `codecList` - Supported codec list
+- `features` - Supported feature set
+- Application-specific custom properties
+
+## Features
+
+Participants advertise supported features:
+
+```typescript
+// Get all features
+const features = await participant.getFeatures();
+
+// Check if feature is supported
+const supportsFeature = participant.hasFeature('feature-name');
+
+// Common features:
+// - 'urn:xmpp:jingle:apps:dtls:0' - DTLS support
+// - 'urn:ietf:rfc:5888' - Audio/video grouping
+// - Application-specific features
+```
+
+From `JitsiParticipant.ts:188-193` and `JitsiParticipant.ts:273-280`:
+
+```typescript
+getFeatures(): Promise<Set<string>> {
+    return Promise.resolve(this._features);
+}
+
+hasFeature(feature: string): boolean {
+    return this._features.has(feature);
+}
+```
+
+## Participant States
+
+### Hidden Participants
+
+Some participants may be hidden (e.g., recording bots):
+
+```typescript
+// Check if participant is hidden
+const isHidden = participant.isHidden();
+
+// Check if hidden from recorder
+const isHiddenFromRecorder = participant.isHiddenFromRecorder();
+```
+
+From `JitsiParticipant.ts:290-305`:
+
+```typescript
+isHidden(): boolean {
+    return this._hidden;
+}
+
+isHiddenFromRecorder(): boolean {
+    return (this._identity as any)?.user?.['hidden-from-recorder'] === 'true';
+}
+```
+
+### Silent Status
+
+Participants who joined without audio:
+
+```typescript
+const isSilent = participant.isSilent();
+```
+
+### Replacement Status
+
+For participant replacement scenarios:
+
+```typescript
+// Check if this participant is replacing another
+const isReplacing = participant.isReplacing();
+
+// Check if this participant will be replaced
+const isReplaced = participant.isReplaced();
+```
+
+From `JitsiParticipant.ts:314-328`:
+
+```typescript
+isReplaced(): boolean {
+    return this._isReplaced;
+}
+
+isReplacing(): boolean {
+    return this._isReplacing;
+}
+
+isSilent(): boolean {
+    return this._isSilent;
+}
+```
+
+## Participant Events
+
+Participant-related events are fired on the conference:
+
+| Event | Parameters | Description |
+|-------|-----------|-------------|
+| `USER_JOINED` | id, participant | Participant joined |
+| `USER_LEFT` | id, participant | Participant left |
+| `USER_ROLE_CHANGED` | id, role | Role changed |
+| `USER_STATUS_CHANGED` | id, status | Status changed |
+| `DISPLAY_NAME_CHANGED` | id, displayName | Display name changed |
+| `PARTICIPANT_PROPERTY_CHANGED` | participant, name, oldValue, newValue | Property changed |
+| `PARTICIPANT_SOURCE_UPDATED` | participant | Sources updated |
+| `PARTCIPANT_FEATURES_CHANGED` | id, features | Features changed |
+| `BOT_TYPE_CHANGED` | id, botType | Bot type changed |
+
+## Practical Examples
+
+### Display Participant List
+
+```typescript
+conference.on(JitsiConferenceEvents.USER_JOINED, (id, participant) => {
+    addParticipantToUI({
+        id: participant.getId(),
+        name: participant.getDisplayName(),
+        isModerator: participant.isModerator(),
+        isAudioMuted: participant.isAudioMuted(),
+        isVideoMuted: participant.isVideoMuted()
+    });
+});
+
+conference.on(JitsiConferenceEvents.USER_LEFT, (id, participant) => {
+    removeParticipantFromUI(id);
+});
+```
+
+### Show Participant Tracks
+
+```typescript
+conference.on(JitsiConferenceEvents.TRACK_ADDED, (track) => {
+    if (track.isLocal()) return;
+    
+    const participantId = track.getParticipantId();
+    const participant = conference.getParticipantById(participantId);
+    
+    if (!participant) return;
+    
+    console.log(`Track added for ${participant.getDisplayName()}`);
+    
+    if (track.isVideoTrack()) {
+        const container = document.getElementById(`video-${participantId}`);
+        track.attach(container);
+    } else {
+        const container = document.getElementById(`audio-${participantId}`);
+        track.attach(container);
+    }
+});
+```
+
+### Monitor Moderator Status
+
+```typescript
+conference.on(JitsiConferenceEvents.USER_ROLE_CHANGED, (id, role) => {
+    const participant = conference.getParticipantById(id);
+    
+    if (participant.isModerator()) {
+        console.log(`${participant.getDisplayName()} is now a moderator`);
+        showModeratorBadge(id);
+    } else {
+        console.log(`${participant.getDisplayName()} is no longer a moderator`);
+        hideModeratorBadge(id);
+    }
+});
+```
+
+### Track Custom Properties
+
+```typescript
+// Listen for property changes
+conference.on(
+    JitsiConferenceEvents.PARTICIPANT_PROPERTY_CHANGED,
+    (participant, propertyName, oldValue, newValue) => {
+        if (propertyName === 'region') {
+            console.log(
+                `${participant.getDisplayName()} region: ${newValue}`
+            );
+            updateParticipantRegion(participant.getId(), newValue);
+        }
+    }
+);
+
+// Set property for local participant
+conference.setLocalParticipantProperty('customData', { key: 'value' });
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Cache Participant References Carefully">
+    Participants may leave and rejoin. Always get fresh references:
+
+    ```typescript
+    // Good: Get fresh reference
+    const participant = conference.getParticipantById(id);
+    if (participant) {
+        const name = participant.getDisplayName();
+    }
+
+    // Avoid: Caching participant objects long-term
+    const cachedParticipant = conference.getParticipantById(id);
+    setTimeout(() => {
+        // This participant might have left
+        cachedParticipant.getDisplayName(); // Risky
+    }, 60000);
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Participant Events">
+    Always handle participant lifecycle events:
+
+    ```typescript
+    conference.on(JitsiConferenceEvents.USER_JOINED, (id, participant) => {
+        console.log('User joined:', participant.getDisplayName());
+        setupParticipantUI(participant);
+    });
+
+    conference.on(JitsiConferenceEvents.USER_LEFT, (id, participant) => {
+        console.log('User left:', participant.getDisplayName());
+        cleanupParticipantUI(id);
+        
+        // Clean up tracks
+        participant.getTracks().forEach(track => {
+            track.detach();
+            track.dispose();
+        });
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Use Properties for Custom Data">
+    Leverage custom properties for application state:
+
+    ```typescript
+    // Share application-specific state
+    conference.setLocalParticipantProperty('raisedHand', true);
+    conference.setLocalParticipantProperty('userRole', 'presenter');
+
+    // React to other participants' properties
+    conference.on(
+        JitsiConferenceEvents.PARTICIPANT_PROPERTY_CHANGED,
+        (participant, name, oldValue, newValue) => {
+            if (name === 'raisedHand' && newValue) {
+                showRaisedHandNotification(participant);
+            }
+        }
+    );
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="JitsiConference" icon="users" href="/concepts/conferences">
+    Learn about conference participant management
+  </Card>
+  <Card title="Media Tracks" icon="video" href="/concepts/tracks">
+    Understand participant track management
+  </Card>
+</CardGroup>

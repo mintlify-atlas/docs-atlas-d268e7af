@@ -1,0 +1,418 @@
+---
+title: Managing Conferences
+description: Create and manage Jitsi video conferences
+---
+
+This guide shows you how to create conferences, manage participants, and handle conference lifecycle events using the `JitsiConference` class.
+
+## Creating a Conference
+
+<Steps>
+
+<Step title="Establish a connection">
+First, ensure you have an active connection:
+
+```javascript
+const connection = new JitsiMeetJS.JitsiConnection(null, null, options);
+connection.connect();
+```
+</Step>
+
+<Step title="Create conference instance">
+Once connected, create a conference:
+
+```javascript
+const conferenceOptions = {
+    openBridgeChannel: true,
+    p2p: {
+        enabled: true,
+        preferredCodec: 'VP9',
+        backToP2PDelay: 5
+    },
+    startAudioMuted: 10,
+    startVideoMuted: 10
+};
+
+const conference = connection.initJitsiConference(
+    'room-name',
+    conferenceOptions
+);
+```
+</Step>
+
+<Step title="Register event listeners">
+Attach handlers for conference events:
+
+```javascript
+conference.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED, onConferenceJoined);
+conference.on(JitsiMeetJS.events.conference.USER_JOINED, onUserJoined);
+conference.on(JitsiMeetJS.events.conference.USER_LEFT, onUserLeft);
+conference.on(JitsiMeetJS.events.conference.TRACK_ADDED, onTrackAdded);
+conference.on(JitsiMeetJS.events.conference.TRACK_REMOVED, onTrackRemoved);
+```
+</Step>
+
+<Step title="Join the conference">
+Join the conference room:
+
+```javascript
+conference.join();
+```
+</Step>
+
+</Steps>
+
+## Conference Configuration
+
+### Core Options
+
+```typescript
+interface IConferenceOptions {
+    config: {
+        // P2P configuration
+        p2p?: {
+            enabled?: boolean;
+            backToP2PDelay?: number;           // Delay before switching back to P2P (default: 5s)
+            codecPreferenceOrder?: string[];    // e.g., ['VP9', 'VP8', 'H264']
+            preferredCodec?: string;
+        };
+        
+        // Start muted policies
+        startAudioMuted?: number;              // Mute audio after N participants
+        startVideoMuted?: number;              // Mute video after N participants
+        
+        // Quality settings
+        channelLastN?: number;                 // Number of video streams to receive (-1 for all)
+        startLastN?: number;                   // Initial lastN value
+        
+        // E2EE
+        e2eping?: {
+            enabled?: boolean;
+        };
+        
+        // Statistics
+        statisticsId?: string;                 // User identifier for stats
+        statisticsDisplayName?: string;        // Display name for stats
+    };
+}
+```
+
+### Video Quality Configuration
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        codecPreferenceOrder: ['VP9', 'VP8', 'H264'],
+        preferredCodec: 'VP9',
+        screenshareCodec: 'VP9',
+        enableAdaptiveMode: true,
+        disabledCodec: 'H264'
+    }
+};
+```
+
+## Event Handling
+
+<CodeGroup>
+
+```javascript Conference Joined
+function onConferenceJoined() {
+    console.log('Conference joined!');
+    console.log('Participant ID:', conference.myUserId());
+    
+    // Add local tracks
+    localTracks.forEach(track => {
+        conference.addTrack(track);
+    });
+}
+```
+
+```javascript User Joined
+function onUserJoined(id, participant) {
+    console.log('User joined:', id);
+    console.log('Display name:', participant.getDisplayName());
+    console.log('Is moderator:', participant.isModerator());
+}
+```
+
+```javascript Track Added
+function onTrackAdded(track) {
+    if (track.isLocal()) {
+        return;
+    }
+    
+    console.log('Remote track added:', track.getType());
+    const participantId = track.getParticipantId();
+    
+    // Attach track to DOM
+    const container = document.getElementById(`participant-${participantId}`);
+    track.attach(container);
+}
+```
+
+```javascript Track Removed
+function onTrackRemoved(track) {
+    console.log('Track removed:', track.getType());
+    track.detach();
+}
+```
+
+</CodeGroup>
+
+## Managing Participants
+
+### Get Participant Information
+
+```javascript
+// Get all participants
+const participants = conference.getParticipants();
+
+// Get specific participant
+const participant = conference.getParticipantById(participantId);
+
+// Get participant properties
+const displayName = participant.getDisplayName();
+const role = participant.getRole();
+const status = participant.getStatus();
+```
+
+### Participant Roles
+
+```javascript
+// Check if participant is moderator
+if (participant.isModerator()) {
+    console.log('Participant is a moderator');
+}
+
+// Check if participant is hidden (e.g., recorder)
+if (participant.isHidden()) {
+    console.log('Participant is hidden');
+}
+
+// Grant moderator role (requires moderator privileges)
+conference.grantOwner(participantId);
+
+// Kick participant (requires moderator privileges)
+conference.kickParticipant(participantId);
+```
+
+## Managing Tracks
+
+### Add Local Tracks
+
+```javascript
+// Create local tracks
+JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video']
+}).then(tracks => {
+    tracks.forEach(track => {
+        // Add track to conference
+        conference.addTrack(track).catch(error => {
+            console.error('Failed to add track:', error);
+        });
+    });
+});
+```
+
+### Remove Tracks
+
+```javascript
+// Remove specific track
+conference.removeTrack(localVideoTrack).then(() => {
+    localVideoTrack.dispose();
+}).catch(error => {
+    console.error('Failed to remove track:', error);
+});
+```
+
+### Replace Tracks
+
+```javascript
+// Replace video track (e.g., switch camera)
+conference.replaceTrack(oldVideoTrack, newVideoTrack).then(() => {
+    console.log('Track replaced successfully');
+    oldVideoTrack.dispose();
+}).catch(error => {
+    console.error('Failed to replace track:', error);
+});
+```
+
+## Audio/Video Moderation
+
+### Mute/Unmute Participants
+
+```javascript
+// Mute participant's audio (requires moderator)
+conference.muteParticipant(participantId, MediaType.AUDIO);
+
+// Request participant to unmute
+conference.sendCommandOnce('unmute-request', {
+    attributes: { participantId }
+});
+```
+
+### Handle Mute Events
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.TRACK_MUTE_CHANGED,
+    (track) => {
+        if (track.isMuted()) {
+            console.log('Track muted:', track.getType());
+        } else {
+            console.log('Track unmuted:', track.getType());
+        }
+    }
+);
+```
+
+## Dominant Speaker
+
+### Track Dominant Speaker
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.DOMINANT_SPEAKER_CHANGED,
+    (participantId) => {
+        console.log('Dominant speaker:', participantId);
+        
+        const participant = conference.getParticipantById(participantId);
+        if (participant) {
+            console.log('Name:', participant.getDisplayName());
+        }
+    }
+);
+```
+
+## Last N
+
+Control how many video streams to receive:
+
+```javascript
+// Receive up to 5 video streams
+conference.setLastN(5);
+
+// Receive all video streams
+conference.setLastN(-1);
+
+// Get current lastN value
+const lastN = conference.getLastN();
+```
+
+## Properties and Commands
+
+### Set Local Properties
+
+```javascript
+// Set display name
+conference.setDisplayName('John Doe');
+
+// Set custom property
+conference.setLocalParticipantProperty('region', 'us-west');
+conference.setLocalParticipantProperty('avatarUrl', 'https://...');
+```
+
+### Send Commands
+
+```javascript
+// Send custom command
+conference.sendCommand('custom-action', {
+    attributes: { data: 'value' },
+    value: 'message'
+});
+
+// Send command once
+conference.sendCommandOnce('one-time-action', {
+    attributes: { key: 'value' }
+});
+
+// Receive commands
+conference.addCommandListener('custom-action', (data, from) => {
+    console.log('Command from:', from);
+    console.log('Data:', data);
+});
+```
+
+## Leaving a Conference
+
+<Steps>
+
+<Step title="Remove local tracks">
+```javascript
+localTracks.forEach(track => {
+    conference.removeTrack(track);
+    track.dispose();
+});
+```
+</Step>
+
+<Step title="Leave the conference">
+```javascript
+conference.leave().then(() => {
+    console.log('Left conference successfully');
+}).catch(error => {
+    console.error('Error leaving conference:', error);
+});
+```
+</Step>
+
+<Step title="Clean up listeners">
+```javascript
+conference.off(JitsiMeetJS.events.conference.CONFERENCE_JOINED, onConferenceJoined);
+conference.off(JitsiMeetJS.events.conference.USER_JOINED, onUserJoined);
+// ... remove other listeners
+```
+</Step>
+
+</Steps>
+
+## Advanced Features
+
+### Sender Video Constraints
+
+Set constraints for video encoding:
+
+```javascript
+conference.setSenderVideoConstraint(720); // Set max resolution to 720p
+```
+
+### Receiver Video Constraints
+
+Control received video quality per participant:
+
+```javascript
+const constraints = {
+    'participant-id-1': { maxHeight: 720 },
+    'participant-id-2': { maxHeight: 180 }
+};
+
+conference.setReceiverConstraints(constraints);
+```
+
+### Speaker Statistics
+
+Get speaking time statistics:
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.SPEAKER_STATS_RECEIVED,
+    (stats) => {
+        // stats is an object with participant IDs as keys
+        Object.keys(stats).forEach(participantId => {
+            const { displayName, totalDominantSpeakerTime } = stats[participantId];
+            console.log(`${displayName} spoke for ${totalDominantSpeakerTime}ms`);
+        });
+    }
+);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Handling Media Tracks" icon="video" href="/guides/handling-media-tracks">
+    Learn about track management
+  </Card>
+  <Card title="Screen Sharing" icon="desktop" href="/guides/screen-sharing">
+    Enable screen sharing in your app
+  </Card>
+</CardGroup>

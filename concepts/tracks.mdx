@@ -1,0 +1,700 @@
+---
+title: Media Tracks  
+description: Understanding JitsiTrack, JitsiLocalTrack, and JitsiRemoteTrack
+---
+
+Media tracks represent individual audio or video streams in a conference. lib-jitsi-meet provides three main track classes: `JitsiTrack` (base class), `JitsiLocalTrack` (local media), and `JitsiRemoteTrack` (remote participant media).
+
+## Track Hierarchy
+
+All track classes inherit from the base `JitsiTrack` class:
+
+```
+JitsiTrack (base class)
+├── JitsiLocalTrack (local audio/video)
+└── JitsiRemoteTrack (remote participant audio/video)
+```
+
+From `modules/RTC/JitsiTrack.ts:50`:
+
+```typescript
+export default class JitsiTrack extends Listenable {
+    private audioLevel: number;
+    private type: MediaType;
+    stream: IExtendedMediaStream;
+    track: IExtendedMediaStreamTrack;
+    public conference: JitsiConference;
+    public videoType: Optional<VideoType>;
+    public disposed: boolean;
+}
+```
+
+## Track Types
+
+### Media Types
+
+Tracks can be either audio or video:
+
+```typescript
+enum MediaType {
+    AUDIO = 'audio',
+    VIDEO = 'video'
+}
+```
+
+### Video Types
+
+Video tracks have additional type classification:
+
+```typescript
+enum VideoType {
+    CAMERA = 'camera',      // Camera/webcam video
+    DESKTOP = 'desktop'     // Screen sharing
+}
+```
+
+## JitsiLocalTrack
+
+`JitsiLocalTrack` represents media from the local participant (microphone, camera, or screen).
+
+### Creating Local Tracks
+
+Use `JitsiMeetJS.createLocalTracks()` to create local tracks:
+
+```typescript
+// Create audio and video tracks
+const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video']
+});
+
+// Create audio only
+const audioTracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio']
+});
+
+// Create video with specific resolution
+const videoTracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['video'],
+    resolution: 720,
+    constraints: {
+        video: {
+            height: { ideal: 720 },
+            width: { ideal: 1280 }
+        }
+    }
+});
+
+// Create desktop (screen sharing) track
+const desktopTrack = await JitsiMeetJS.createLocalTracks({
+    devices: ['desktop']
+});
+```
+
+### Track Constructor
+
+From `modules/RTC/JitsiLocalTrack.ts:127-147`:
+
+<CodeGroup>
+```typescript Track Info Interface
+interface ITrackInfo {
+    constraints: ITrackConstraints;      // Constraints used for track creation
+    deviceId: string;                    // Device ID
+    effects?: IStreamEffect[];           // Effects to apply
+    facingMode?: CameraFacingMode;       // Camera facing mode (mobile)
+    mediaType: MediaType;                // 'audio' or 'video'
+    rtcId: number;                       // RTC module ID
+    sourceId?: string;                   // Desktop sharing source ID
+    sourceType?: string;                 // Source type
+    stream: MediaStream;                 // WebRTC MediaStream
+    track: MediaStreamTrack;             // WebRTC MediaStreamTrack
+    videoType?: VideoType;               // Video type if applicable
+}
+
+constructor(trackInfo: ITrackInfo) {
+    super(
+        /* conference */ null,
+        stream,
+        track,
+        /* streamInactiveHandler */ () => this.emit(JitsiTrackEvents.LOCAL_TRACK_STOPPED, this),
+        mediaType,
+        videoType
+    );
+}
+```
+</CodeGroup>
+
+### Track Metadata
+
+Local tracks maintain metadata:
+
+```typescript
+interface ITrackMetadata {
+    displaySurface?: string;  // For desktop tracks: 'monitor', 'window', 'application'
+    timestamp: number;        // Track creation timestamp
+}
+
+const track = localTracks[0];
+console.log('Track created at:', new Date(track.metadata.timestamp));
+if (track.videoType === VideoType.DESKTOP) {
+    console.log('Display surface:', track.metadata.displaySurface);
+}
+```
+
+### Muting and Unmuting
+
+From `modules/RTC/JitsiLocalTrack.ts:877-1051`:
+
+```typescript
+// Mute track
+await localTrack.mute();
+
+// Unmute track
+await localTrack.unmute();
+
+// Check mute status
+const isMuted = localTrack.isMuted();
+
+// Listen for mute changes
+localTrack.on(JitsiTrackEvents.TRACK_MUTE_CHANGED, (track) => {
+    console.log('Track muted:', track.isMuted());
+});
+```
+
+<Info>
+Muting works differently for audio and video:
+- **Audio tracks**: `track.enabled` is set to false
+- **Video tracks (browser-dependent)**: May remove the track from peer connection or just disable it
+- **Desktop tracks**: Often removed from connection when muted and recreated when unmuted
+</Info>
+
+### Attaching to DOM Elements
+
+From `modules/RTC/JitsiTrack.ts:266-277`:
+
+```typescript
+// Attach track to HTML element
+const videoElement = document.getElementById('localVideo');
+await localTrack.attach(videoElement);
+
+// Detach from specific element
+localTrack.detach(videoElement);
+
+// Detach from all elements
+localTrack.detach();
+```
+
+Attached containers are tracked in `this.containers`:
+
+```typescript
+this.containers = [];  // Array of HTML elements displaying this track
+```
+
+### Audio Levels
+
+Monitor audio levels for local tracks:
+
+```typescript
+localAudioTrack.on(JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED, (audioLevel) => {
+    // audioLevel is a value between 0 and 1
+    console.log('Audio level:', audioLevel);
+    updateAudioIndicator(audioLevel);
+});
+```
+
+From `modules/RTC/JitsiTrack.ts:499-527`:
+
+```typescript
+setAudioLevel(audioLevel: number, tpc?: TraceablePeerConnection): void {
+    let newAudioLevel = audioLevel;
+
+    // Reset to zero if muted
+    if (browser.supportsReceiverStats() && typeof tpc !== 'undefined' && this.isMuted()) {
+        newAudioLevel = 0;
+    }
+
+    if (this.audioLevel !== newAudioLevel) {
+        this.audioLevel = newAudioLevel;
+        this.emit(JitsiTrackEvents.TRACK_AUDIO_LEVEL_CHANGED, newAudioLevel, tpc);
+    }
+}
+```
+
+### Stream Effects
+
+Apply effects like background blur or virtual backgrounds:
+
+```typescript
+// Define an effect
+const blurEffect = {
+    isEnabled: (track) => track.isVideoTrack(),
+    startEffect: (stream) => {
+        // Apply blur processing
+        return processedStream;
+    },
+    stopEffect: () => {
+        // Clean up effect
+    }
+};
+
+// Apply effect to track
+await localVideoTrack.setEffect(blurEffect);
+
+// Remove effect
+await localVideoTrack.setEffect(undefined);
+```
+
+From `modules/RTC/JitsiLocalTrack.ts:927-989`:
+
+```typescript
+setEffect(effect?: IStreamEffect): Promise<void> {
+    if (typeof this._streamEffect === 'undefined' && typeof effect === 'undefined') {
+        return Promise.resolve();
+    }
+
+    if (typeof effect !== 'undefined' && !effect.isEnabled(this)) {
+        return Promise.reject(new Error('Incompatible effect instance!'));
+    }
+
+    // Remove from conference, switch effect, add back to conference
+    return conference._removeLocalTrackFromPc(this)
+        .then(() => {
+            this._switchStreamEffect(effect);
+            return conference._addLocalTrackToPc(this);
+        });
+}
+```
+
+### Device Management
+
+Get device information:
+
+```typescript
+// Get device ID
+const deviceId = localTrack.getDeviceId();
+
+// Get camera facing mode (mobile)
+if (localTrack.isVideoTrack() && localTrack.videoType === VideoType.CAMERA) {
+    const facingMode = localTrack.getCameraFacingMode();
+    console.log('Camera facing:', facingMode); // 'user' or 'environment'
+}
+
+// Get track resolution
+if (localTrack.isVideoTrack()) {
+    const resolution = localTrack.getCaptureResolution();
+    console.log('Resolution:', resolution);
+}
+```
+
+### Track Lifecycle
+
+From `modules/RTC/JitsiLocalTrack.ts:665-692`:
+
+```typescript
+// Dispose track when done
+await localTrack.dispose();
+
+// Check if track is disposed
+if (localTrack.disposed) {
+    console.log('Track is disposed');
+}
+
+// Check if track has ended
+if (localTrack.isEnded()) {
+    console.log('Track ended (device disconnected or stopped)');
+}
+
+// Listen for track stopped event
+localTrack.on(JitsiTrackEvents.LOCAL_TRACK_STOPPED, () => {
+    console.log('Track stopped');
+});
+```
+
+<Warning>
+Always dispose of tracks when finished to free up media resources and stop camera/microphone access.
+</Warning>
+
+### Source Name and SSRC
+
+Tracks are identified by source name and SSRC:
+
+```typescript
+// Get source name (used for signaling)
+const sourceName = localTrack.getSourceName();
+
+// Get SSRC (Synchronization Source identifier)
+const ssrc = localTrack.getSsrc();
+
+// Get participant ID
+const participantId = localTrack.getParticipantId();
+```
+
+## JitsiRemoteTrack
+
+`JitsiRemoteTrack` represents media from remote participants.
+
+### Constructor
+
+From `modules/RTC/JitsiRemoteTrack.ts:74-134`:
+
+<CodeGroup>
+```typescript Constructor Parameters
+constructor(
+    rtc: RTC,
+    conference: JitsiConference,
+    ownerEndpointId: string,        // Participant ID
+    stream: MediaStream,
+    track: MediaStreamTrack,
+    mediaType: MediaType,
+    videoType: VideoType,
+    ssrc: number,                    // Must be a number
+    muted: boolean,                  // Initial mute state
+    isP2P: boolean,                  // P2P or JVB connection
+    sourceName: string               // Source name for track
+) {
+    super(conference, stream, track, () => {}, mediaType, videoType);
+    
+    // Validate SSRC is a number
+    if (typeof ssrc !== 'number') {
+        throw new TypeError(`SSRC ${ssrc} is not a number`);
+    }
+    
+    this._ssrc = ssrc;
+    this.ownerEndpointId = ownerEndpointId;
+    this._muted = muted;
+    this.isP2P = isP2P;
+    this._sourceName = sourceName;
+}
+```
+</CodeGroup>
+
+### Receiving Remote Tracks
+
+Remote tracks are received through conference events:
+
+```typescript
+conference.on(JitsiConferenceEvents.TRACK_ADDED, (track) => {
+    if (track.isLocal()) {
+        return; // Skip local tracks
+    }
+    
+    const participantId = track.getParticipantId();
+    const mediaType = track.getType();
+    
+    if (track.isVideoTrack()) {
+        const videoElement = document.getElementById(`video-${participantId}`);
+        track.attach(videoElement);
+    } else if (track.isAudioTrack()) {
+        const audioElement = document.getElementById(`audio-${participantId}`);
+        track.attach(audioElement);
+    }
+});
+
+conference.on(JitsiConferenceEvents.TRACK_REMOVED, (track) => {
+    track.detach();
+    track.dispose();
+});
+```
+
+### Remote Track Properties
+
+```typescript
+// Get participant ID
+const participantId = remoteTrack.getParticipantId();
+
+// Get source name
+const sourceName = remoteTrack.getSourceName();
+
+// Get SSRC
+const ssrc = remoteTrack.getSsrc();
+
+// Check if P2P track
+const isP2P = remoteTrack.isP2P;
+
+// Check mute state
+const isMuted = remoteTrack.isMuted();
+
+// Get video type
+if (remoteTrack.isVideoTrack()) {
+    const videoType = remoteTrack.getVideoType(); // 'camera' or 'desktop'
+}
+```
+
+### Mute State
+
+Remote track mute state is controlled by the remote participant:
+
+```typescript
+remoteTrack.on(JitsiTrackEvents.TRACK_MUTE_CHANGED, (track) => {
+    console.log('Remote track muted:', track.isMuted());
+    
+    if (track.isMuted()) {
+        // Show muted indicator
+    } else {
+        // Hide muted indicator
+    }
+});
+```
+
+From `modules/RTC/JitsiRemoteTrack.ts:446-464`:
+
+```typescript
+setMute(value: boolean): void {
+    if (this._muted === value) {
+        return;
+    }
+
+    if (value) {
+        this._hasBeenMuted = true;
+    }
+
+    if (this.stream) {
+        this.stream.muted = value;
+    }
+
+    this._muted = value;
+    logger.info(`Mute ${this}: ${value}`);
+    this.emit(JitsiTrackEvents.TRACK_MUTE_CHANGED, this);
+}
+```
+
+### Track Streaming Status
+
+Monitor if a remote track is actively receiving data:
+
+```typescript
+enum TrackStreamingStatus {
+    ACTIVE = 'active',           // Receiving data
+    INACTIVE = 'inactive',       // Not receiving data
+    INTERRUPTED = 'interrupted', // Connection interrupted
+    RESTORING = 'restoring'      // Attempting to restore
+}
+
+remoteTrack.on(JitsiTrackEvents.TRACK_STREAMING_STATUS_CHANGED, 
+    (track, status) => {
+        console.log('Streaming status:', status);
+        
+        switch(status) {
+            case TrackStreamingStatus.ACTIVE:
+                // Show video
+                break;
+            case TrackStreamingStatus.INACTIVE:
+                // Show avatar/placeholder
+                break;
+            case TrackStreamingStatus.INTERRUPTED:
+                // Show connection issues
+                break;
+        }
+    }
+);
+
+// Get current status
+const status = remoteTrack.getTrackStreamingStatus();
+```
+
+### Video Type Changes
+
+Detect when a participant switches between camera and screen sharing:
+
+```typescript
+remoteTrack.on(JitsiTrackEvents.TRACK_VIDEOTYPE_CHANGED, (type) => {
+    console.log('Video type changed to:', type);
+    
+    if (type === VideoType.DESKTOP) {
+        // Handle screen sharing
+        expandVideoToFullScreen();
+    } else {
+        // Handle camera video
+        showInNormalView();
+    }
+});
+```
+
+From `modules/RTC/JitsiRemoteTrack.ts:380-386`:
+
+```typescript
+_setVideoType(type: VideoType): void {
+    if (this.videoType === type) {
+        return;
+    }
+    this.videoType = type;
+    this.emit(JitsiTrackEvents.TRACK_VIDEOTYPE_CHANGED, type);
+}
+```
+
+## Common Track Operations
+
+### Track Information
+
+Both local and remote tracks provide:
+
+```typescript
+// Basic info
+const trackId = track.getId();              // Stream ID
+const trackLabel = track.getTrackLabel();   // MediaStreamTrack label
+const mediaType = track.getType();          // 'audio' or 'video'
+
+// Check track type
+const isAudio = track.isAudioTrack();
+const isVideo = track.isVideoTrack();
+const isLocal = track.isLocal();
+
+// Get underlying WebRTC objects
+const mediaStream = track.getOriginalStream();
+const mediaStreamTrack = track.getTrack();
+```
+
+### Audio Output Device
+
+Change the audio output device for playback:
+
+```typescript
+// Set audio output device (for audio tracks only)
+await track.setAudioOutput(deviceId);
+
+track.on(JitsiTrackEvents.TRACK_AUDIO_OUTPUT_CHANGED, (deviceId) => {
+    console.log('Audio output changed to:', deviceId);
+});
+```
+
+From `modules/RTC/JitsiTrack.ts:536-568`:
+
+```typescript
+setAudioOutput(audioOutputDeviceId: string): Promise<void> {
+    if (!RTCUtils.isDeviceChangeAvailable('output')) {
+        return Promise.reject(
+            new Error('Audio output device change is not supported'));
+    }
+
+    if (this.isVideoTrack()) {
+        return Promise.resolve();
+    }
+
+    return Promise.all(
+        this.containers.map(element =>
+            (element as HTMLAudioElement | HTMLVideoElement)
+                .setSinkId(audioOutputDeviceId)
+        )
+    ).then(() => {
+        this.emit(JitsiTrackEvents.TRACK_AUDIO_OUTPUT_CHANGED, audioOutputDeviceId);
+    });
+}
+```
+
+### Track Dimensions
+
+For video tracks:
+
+```typescript
+if (track.isVideoTrack()) {
+    const height = track.getHeight();  // Normalized landscape height
+    const width = track.getWidth();    // Normalized landscape width
+    
+    console.log(`Video dimensions: ${width}x${height}`);
+}
+```
+
+## Track Events
+
+All track events from `JitsiTrackEvents`:
+
+| Event | Fired On | Description |
+|-------|----------|-------------|
+| `LOCAL_TRACK_STOPPED` | Local | Local track stopped |
+| `TRACK_AUDIO_LEVEL_CHANGED` | Both | Audio level changed |
+| `TRACK_AUDIO_OUTPUT_CHANGED` | Both | Audio output device changed |
+| `TRACK_MUTE_CHANGED` | Both | Mute state changed |
+| `TRACK_VIDEOTYPE_CHANGED` | Remote | Video type changed |
+| `TRACK_STREAMING_STATUS_CHANGED` | Remote | Streaming status changed |
+| `NO_AUDIO_INPUT` | Local | No audio input detected |
+| `NO_DATA_FROM_SOURCE` | Local | No data from source |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Track Creation and Disposal">
+    Always dispose of tracks to free resources:
+
+    ```typescript
+    // Create tracks
+    const tracks = await JitsiMeetJS.createLocalTracks({
+        devices: ['audio', 'video']
+    });
+
+    // Use tracks...
+
+    // Dispose when done
+    for (const track of tracks) {
+        if (conference) {
+            await conference.removeTrack(track);
+        }
+        await track.dispose();
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Track Failures">
+    Gracefully handle track creation failures:
+
+    ```typescript
+    try {
+        const tracks = await JitsiMeetJS.createLocalTracks({
+            devices: ['audio', 'video']
+        });
+    } catch (error) {
+        console.error('Failed to create tracks:', error);
+        
+        // Try creating just audio
+        try {
+            const audioTracks = await JitsiMeetJS.createLocalTracks({
+                devices: ['audio']
+            });
+        } catch (audioError) {
+            // Handle complete failure
+        }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Attach/Detach Properly">
+    Always detach tracks before disposal:
+
+    ```typescript
+    // When participant leaves
+    conference.on(JitsiConferenceEvents.USER_LEFT, (id, participant) => {
+        const tracks = participant.getTracks();
+        tracks.forEach(track => {
+            track.detach();  // Detach from all containers
+            track.dispose(); // Clean up resources
+        });
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Monitor Track Health">
+    Monitor track streaming status for remote tracks:
+
+    ```typescript
+    remoteTrack.on(
+        JitsiTrackEvents.TRACK_STREAMING_STATUS_CHANGED,
+        (track, status) => {
+            if (status === TrackStreamingStatus.INTERRUPTED) {
+                showConnectionWarning(track.getParticipantId());
+            } else if (status === TrackStreamingStatus.ACTIVE) {
+                hideConnectionWarning(track.getParticipantId());
+            }
+        }
+    );
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="JitsiConference" icon="users" href="/concepts/conferences">
+    Learn about adding and removing tracks from conferences
+  </Card>
+  <Card title="JitsiParticipant" icon="user" href="/concepts/participants">
+    Understand participant track management
+  </Card>
+</CardGroup>

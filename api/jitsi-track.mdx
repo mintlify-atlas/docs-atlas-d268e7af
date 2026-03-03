@@ -1,0 +1,385 @@
+---
+title: JitsiTrack
+description: Base class for local and remote media tracks
+---
+
+## Overview
+
+The `JitsiTrack` class represents a single media track (either audio or video). It serves as the base class for both `JitsiLocalTrack` and `JitsiRemoteTrack`.
+
+## Constructor
+
+```typescript
+constructor(
+  conference: JitsiConference,
+  stream: MediaStream,
+  track: MediaStreamTrack,
+  streamInactiveHandler: MediaStreamTrackEventHandler,
+  trackMediaType: MediaType,
+  videoType?: VideoType
+)
+```
+
+<ParamField path="conference" type="JitsiConference" required>
+  The conference instance this track belongs to
+</ParamField>
+
+<ParamField path="stream" type="MediaStream" required>
+  The WebRTC MediaStream instance
+</ParamField>
+
+<ParamField path="track" type="MediaStreamTrack" required>
+  The WebRTC MediaStreamTrack instance (must be part of the stream)
+</ParamField>
+
+<ParamField path="streamInactiveHandler" type="Function" required>
+  Handler for onended/oninactive events of the stream
+</ParamField>
+
+<ParamField path="trackMediaType" type="MediaType" required>
+  The media type of the track ('audio' or 'video')
+</ParamField>
+
+<ParamField path="videoType" type="VideoType">
+  The video type for video tracks ('camera' or 'desktop')
+</ParamField>
+
+## Methods
+
+### attach()
+
+Attaches the MediaStream of this track to an HTML container.
+
+```typescript
+attach(container: HTMLElement): Promise<void>
+```
+
+<ParamField path="container" type="HTMLElement" required>
+  The HTML container ('video' or 'audio' element) to attach to
+</ParamField>
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when the track is successfully attached
+</ResponseField>
+
+### detach()
+
+Removes this JitsiTrack from the HTML container.
+
+```typescript
+detach(container?: HTMLElement): void
+```
+
+<ParamField path="container" type="HTMLElement">
+  The HTML container to detach from. If not specified, detaches from all containers
+</ParamField>
+
+### dispose()
+
+Removes attached event listeners and cleans up resources.
+
+```typescript
+dispose(): Promise<void>
+```
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when disposal is complete
+</ResponseField>
+
+### getId()
+
+Returns the ID of the track.
+
+```typescript
+getId(): string | null
+```
+
+<ResponseField name="id" type="string | null">
+  The track ID or null if this is a fake track
+</ResponseField>
+
+### getOriginalStream()
+
+Returns the WebRTC MediaStream instance.
+
+```typescript
+getOriginalStream(): MediaStream
+```
+
+<ResponseField name="stream" type="MediaStream">
+  The underlying WebRTC MediaStream
+</ResponseField>
+
+### getSourceName()
+
+Returns the source name of the track.
+
+```typescript
+getSourceName(): string | undefined
+```
+
+<ResponseField name="sourceName" type="string | undefined">
+  The source name identifier
+</ResponseField>
+
+### getSsrc()
+
+Returns the primary SSRC associated with the track.
+
+```typescript
+getSsrc(): number | undefined
+```
+
+<ResponseField name="ssrc" type="number | undefined">
+  The synchronization source identifier
+</ResponseField>
+
+### getStreamId()
+
+Returns the ID of the underlying WebRTC MediaStream.
+
+```typescript
+getStreamId(): string | null
+```
+
+<ResponseField name="streamId" type="string | null">
+  The MediaStream ID
+</ResponseField>
+
+### getTrack()
+
+Returns the underlying WebRTC MediaStreamTrack.
+
+```typescript
+getTrack(): MediaStreamTrack
+```
+
+<ResponseField name="track" type="MediaStreamTrack">
+  The underlying MediaStreamTrack
+</ResponseField>
+
+### getTrackId()
+
+Returns the ID of the underlying WebRTC MediaStreamTrack.
+
+```typescript
+getTrackId(): string | null
+```
+
+<ResponseField name="trackId" type="string | null">
+  The MediaStreamTrack ID
+</ResponseField>
+
+### getTrackLabel()
+
+Returns the label of the underlying WebRTC MediaStreamTrack.
+
+```typescript
+getTrackLabel(): string
+```
+
+<ResponseField name="label" type="string">
+  The track label (e.g., device name)
+</ResponseField>
+
+### getType()
+
+Returns the type (audio or video) of this track.
+
+```typescript
+getType(): MediaType
+```
+
+<ResponseField name="type" type="MediaType">
+  Either 'audio' or 'video'
+</ResponseField>
+
+### getUsageLabel()
+
+Returns a meaningful usage label for this track.
+
+```typescript
+getUsageLabel(): string
+```
+
+<ResponseField name="label" type="string">
+  'mic' for audio tracks, or the video type ('camera', 'desktop') for video tracks
+</ResponseField>
+
+### getVideoType()
+
+Returns the video type of this track.
+
+```typescript
+getVideoType(): VideoType | undefined
+```
+
+<ResponseField name="videoType" type="VideoType | undefined">
+  'camera' or 'desktop' for video tracks, undefined for audio
+</ResponseField>
+
+### getHeight()
+
+Returns the height of the track in normalized landscape format.
+
+```typescript
+getHeight(): number
+```
+
+<ResponseField name="height" type="number">
+  The minimum of track height and width (normalized)
+</ResponseField>
+
+### getWidth()
+
+Returns the width of the track in normalized landscape format.
+
+```typescript
+getWidth(): number
+```
+
+<ResponseField name="width" type="number">
+  The maximum of track height and width (normalized)
+</ResponseField>
+
+### isActive()
+
+Checks whether the MediaStream is active/not ended.
+
+```typescript
+isActive(): boolean
+```
+
+<ResponseField name="active" type="boolean">
+  True if the MediaStream is active, false otherwise
+</ResponseField>
+
+### isAudioTrack()
+
+Checks if this is an audio track.
+
+```typescript
+isAudioTrack(): boolean
+```
+
+<ResponseField name="isAudio" type="boolean">
+  True if this is an audio track
+</ResponseField>
+
+### isVideoTrack()
+
+Checks if this is a video track.
+
+```typescript
+isVideoTrack(): boolean
+```
+
+<ResponseField name="isVideo" type="boolean">
+  True if this is a video track
+</ResponseField>
+
+### isLocal()
+
+Checks whether this is a local track.
+
+```typescript
+isLocal(): boolean
+```
+
+<ResponseField name="isLocal" type="boolean">
+  True if it's a local track, false otherwise
+</ResponseField>
+
+### isLocalAudioTrack()
+
+Checks whether this is a local audio track.
+
+```typescript
+isLocalAudioTrack(): boolean
+```
+
+<ResponseField name="isLocalAudio" type="boolean">
+  True if this is a local audio track
+</ResponseField>
+
+### isMuted()
+
+Checks whether this track is muted.
+
+```typescript
+isMuted(): boolean
+```
+
+<ResponseField name="muted" type="boolean">
+  True if the track is muted
+</ResponseField>
+
+### setAudioLevel()
+
+Sets the audio level for the stream.
+
+```typescript
+setAudioLevel(audioLevel: number, tpc?: TraceablePeerConnection): void
+```
+
+<ParamField path="audioLevel" type="number" required>
+  Value between 0 and 1
+</ParamField>
+
+<ParamField path="tpc" type="TraceablePeerConnection">
+  The peer connection instance which is the source for the audio level
+</ParamField>
+
+### setAudioOutput()
+
+Sets a new audio output device for track's DOM elements.
+
+```typescript
+setAudioOutput(audioOutputDeviceId: string): Promise<void>
+```
+
+<ParamField path="audioOutputDeviceId" type="string" required>
+  ID of 'audiooutput' device from navigator.mediaDevices.enumerateDevices(), or '' for default device
+</ParamField>
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when the audio output device is changed successfully
+</ResponseField>
+
+### setSourceName()
+
+Assigns the source name to a track.
+
+```typescript
+setSourceName(name: string): void
+```
+
+<ParamField path="name" type="string" required>
+  The name to be assigned to the track
+</ParamField>
+
+## Properties
+
+<ResponseField name="disposed" type="boolean">
+  Indicates whether this JitsiTrack has been disposed. If true, the track is unusable
+</ResponseField>
+
+<ResponseField name="conference" type="JitsiConference">
+  The conference instance this track belongs to
+</ResponseField>
+
+<ResponseField name="videoType" type="VideoType | undefined">
+  The video type ('camera' or 'desktop') for video tracks
+</ResponseField>
+
+<ResponseField name="containers" type="HTMLElement[]">
+  Array of HTML elements that are displaying the track
+</ResponseField>
+
+## Events
+
+JitsiTrack extends the Listenable class and emits various events:
+
+- `TRACK_AUDIO_LEVEL_CHANGED` - Fired when audio level changes
+- `TRACK_AUDIO_OUTPUT_CHANGED` - Fired when audio output device changes
+- `NO_AUDIO_INPUT` - Fired when no audio input is detected

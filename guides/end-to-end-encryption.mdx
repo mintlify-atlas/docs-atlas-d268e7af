@@ -1,0 +1,581 @@
+---
+title: End-to-End Encryption
+description: Implement E2EE using insertable streams in Jitsi conferences
+---
+
+This guide covers end-to-end encryption (E2EE) implementation in lib-jitsi-meet using insertable streams and the JFrame protocol.
+
+## Overview
+
+lib-jitsi-meet implements E2EE using:
+
+- **Insertable Streams API**: Intercepts and transforms media frames
+- **JFrame Protocol**: SFrame variant optimized for Jitsi
+- **Olm**: End-to-end encrypted key exchange
+- **AES-GCM**: 128-bit encryption for media frames
+- **Web Workers**: Offloads encryption to background thread
+
+<Warning>
+E2EE is currently supported only in browsers with [insertable streams](https://github.com/w3c/webrtc-insertable-streams) support (Chrome, Edge, Safari).
+</Warning>
+
+## Architecture
+
+### Key Components
+
+1. **E2EEContext**: Per-participant encryption context
+2. **Worker**: Web Worker that performs encryption/decryption
+3. **OlmAdapter**: Handles key distribution via Olm
+4. **Key Ratcheting**: Automatic key rotation on participant changes
+
+### Encryption Flow
+
+```
+Local Media → Insertable Stream → Worker (Encrypt) → Encrypted Frame → Network
+Network → Encrypted Frame → Worker (Decrypt) → Insertable Stream → Remote Media
+```
+
+## Enabling E2EE
+
+<Steps>
+
+<Step title="Check browser support">
+```javascript
+if (!conference.isE2EESupported()) {
+    console.error('E2EE not supported in this browser');
+    return;
+}
+```
+</Step>
+
+<Step title="Enable E2EE in conference">
+```javascript
+// E2EE is automatically initialized if supported
+const conference = connection.initJitsiConference('room', {
+    e2eping: {
+        enabled: true  // Optional: enables E2EE ping for monitoring
+    }
+});
+```
+</Step>
+
+<Step title="Set encryption key">
+```javascript
+// Generate or retrieve encryption key
+const key = await generateEncryptionKey();
+
+// Enable E2EE with the key
+await conference.toggleE2EE(true);
+await conference.setE2EEKey(key);
+
+console.log('E2EE enabled');
+```
+</Step>
+
+</Steps>
+
+## Key Management
+
+### Generate Encryption Key
+
+```javascript
+// Generate random 256-bit key
+function generateEncryptionKey() {
+    const key = new Uint8Array(32);
+    crypto.getRandomValues(key);
+    return key;
+}
+
+// Or derive from passphrase
+async function deriveKeyFromPassphrase(passphrase) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(passphrase);
+    
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return new Uint8Array(hash);
+}
+```
+
+### Set Encryption Key
+
+```javascript
+// Set key for the conference
+const key = await generateEncryptionKey();
+await conference.setE2EEKey(key);
+
+// All participants must use the same key
+// Share key securely out-of-band
+```
+
+### Key Rotation
+
+```javascript
+// The library automatically rotates keys when:
+// 1. A participant leaves (new key generated)
+// 2. A participant joins (key ratcheted)
+
+// Manual key rotation
+async function rotateKey() {
+    const newKey = await generateEncryptionKey();
+    await conference.setE2EEKey(newKey);
+    
+    // Share new key with participants
+    // (via secure channel)
+}
+
+// Listen for key rotation events
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_VERIFICATION_AVAILABLE,
+    (participantId) => {
+        console.log('E2EE verification available for', participantId);
+    }
+);
+```
+
+### Key Ratcheting
+
+Keys are automatically ratcheted (derived) when participants join:
+
+```javascript
+// Key ratcheting happens automatically:
+// 1. Participant joins → All participants ratchet their keys
+// 2. New key derived using HKDF
+// 3. No key exchange needed (all derive same key)
+
+// This maintains forward secrecy without signaling
+```
+
+## E2EE Context Management
+
+### Per-Participant Context
+
+```javascript
+// Each participant has their own E2EEContext
+// The context manages:
+// - Encryption keys (key ring)
+// - Send counters (for IV generation)
+// - Ratchet state
+
+// Context is created automatically for each participant
+```
+
+### Encryption Parameters
+
+```javascript
+// The encryption uses:
+// - Algorithm: AES-GCM
+// - Key size: 128 bits
+// - IV size: 96 bits (12 bytes)
+// - Tag size: 128 bits (16 bytes)
+
+// IV construction:
+// [SSRC (4 bytes)][Timestamp (4 bytes)][Counter (4 bytes)]
+```
+
+## Frame Encryption
+
+### JFrame Format
+
+Encrypted frames use a custom trailer format:
+
+```
++------------------+-------------------------+-+---------+-----+
+| Unencrypted      | Encrypted Payload       |I|IV_LENGTH| KID |
+| Header           |                         |V|         |     |
++------------------+-------------------------+-+---------+-----+
+
+Unencrypted Header:
+- VP8: 10 bytes (keyframe) or 3 bytes (delta)
+- Opus: 1 byte (TOC)
+
+Trailer:
+- IV: Variable length (12 bytes typical)
+- IV_LENGTH: 1 byte
+- KID: 1 byte (key index in ring buffer)
+```
+
+### Selective Encryption
+
+```javascript
+// Only the payload is encrypted, not:
+// - VP8 payload descriptor (for SFU compatibility)
+// - Opus TOC byte
+// - RTP headers (handled by SRTP)
+
+// This allows:
+// - SFU to detect keyframes
+// - Bridge to forward without decryption
+// - Decoder to show visual artifacts instead of errors
+```
+
+## E2EE Events
+
+### Monitor E2EE Status
+
+```javascript
+// E2EE enabled/disabled
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_ENABLED,
+    () => {
+        console.log('E2EE enabled');
+        updateUI({ e2eeActive: true });
+    }
+);
+
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_DISABLED,
+    () => {
+        console.log('E2EE disabled');
+        updateUI({ e2eeActive: false });
+    }
+);
+
+// Verification available
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_VERIFICATION_AVAILABLE,
+    (participantId) => {
+        console.log('Can verify', participantId);
+        // Show verification UI
+    }
+);
+
+// Verification completed
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_VERIFICATION_COMPLETED,
+    (participantId, success) => {
+        if (success) {
+            console.log('Verified', participantId);
+        } else {
+            console.warn('Verification failed for', participantId);
+        }
+    }
+);
+```
+
+## Verification (SAS)
+
+### Short Authentication String
+
+Verify that participants share the same key using SAS:
+
+```javascript
+// Get SAS for participant
+const sas = await conference.getE2EESAS(participantId);
+console.log('SAS:', sas); // e.g., "🐶 🌮 🚀 🎨 🌈 🎭 🎪"
+
+// Both participants compare SAS
+// If they match, keys are synchronized
+
+// Mark as verified
+await conference.markE2EEVerified(participantId, true);
+```
+
+### Verification Flow
+
+<Steps>
+
+<Step title="Request verification">
+```javascript
+const participantId = 'user123';
+const sas = await conference.getE2EESAS(participantId);
+```
+</Step>
+
+<Step title="Display SAS to both users">
+```javascript
+// Show emoji SAS: 🐶 🌮 🚀 🎨 🌈 🎭 🎪
+// Both users compare visually or read over voice
+```
+</Step>
+
+<Step title="Confirm match">
+```javascript
+if (userConfirmsMatch) {
+    await conference.markE2EEVerified(participantId, true);
+    console.log('Participant verified');
+}
+```
+</Step>
+
+</Steps>
+
+## E2EE with Visitors (Experimental)
+
+```javascript
+// E2EE works differently with visitors:
+// - Visitors use a shared key
+// - No individual key ratcheting
+// - Limited verification
+
+const conferenceOptions = {
+    e2ee: {
+        visitorKey: visitorSharedKey  // Separate key for visitors
+    }
+};
+```
+
+## Performance Considerations
+
+### Web Worker Usage
+
+```javascript
+// Encryption runs in Web Worker to avoid blocking main thread
+// - Worker handles all encrypt/decrypt operations
+// - Frames transferred via Transferable objects
+// - Minimal impact on main thread performance
+
+// Worker is loaded from: lib-jitsi-meet/dist/lib-jitsi-meet.e2ee-worker.js
+```
+
+### Encryption Overhead
+
+```javascript
+// Performance impact:
+// - CPU: ~5-10% increase for encryption/decryption
+// - Bandwidth: +28 bytes per frame (IV + tag + trailer)
+// - Latency: <1ms per frame (in worker)
+
+// Optimizations:
+// - Hardware crypto APIs (AES-GCM in WebCrypto)
+// - Frame batching in worker
+// - Efficient IV generation
+```
+
+## Limitations
+
+<Warning>
+E2EE has several current limitations:
+
+- **Browser support**: Requires insertable streams (no Firefox support)
+- **Recording**: Cannot record encrypted media on server
+- **SFU processing**: Bridge cannot do quality adaptation
+- **Screen sharing**: Works but may have compatibility issues
+- **Simulcast**: Limited support
+</Warning>
+
+### Known Issues
+
+```javascript
+// E2EE currently does not work with:
+// - Server-side recording (Jibri)
+// - Server-side transcription
+// - Some advanced quality features
+// - Live streaming
+
+// Workarounds:
+// - Use client-side recording
+// - Disable E2EE for recorded sessions
+// - Use E2EE selectively
+```
+
+## Debugging E2EE
+
+### Enable E2EE Logging
+
+```javascript
+// Set log level for E2EE
+JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.TRACE);
+
+// E2EE-specific logs will show:
+// - Key generation
+// - Encryption/decryption operations
+// - Key rotation events
+// - Verification status
+```
+
+### E2EE Ping
+
+Monitor E2EE health using ping:
+
+```javascript
+const conferenceOptions = {
+    e2eping: {
+        enabled: true
+    }
+};
+
+// Periodically sends encrypted ping messages
+// Verifies encryption is working end-to-end
+
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_PING_SUCCESS,
+    (participantId, rtt) => {
+        console.log(`E2EE ping to ${participantId}: ${rtt}ms`);
+    }
+);
+
+conference.on(
+    JitsiMeetJS.events.conference.E2EE_PING_FAILED,
+    (participantId) => {
+        console.error(`E2EE ping failed to ${participantId}`);
+    }
+);
+```
+
+## Security Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Use strong random keys">
+Generate keys using cryptographically secure random number generator:
+
+```javascript
+const key = new Uint8Array(32);
+crypto.getRandomValues(key);
+```
+</Accordion>
+
+<Accordion title="Share keys securely">
+Never send keys over the conference signaling:
+
+```javascript
+// Use out-of-band channels:
+// - Secure messaging app
+// - QR code (in-person)
+// - Pre-shared key
+// - Key server with authentication
+```
+</Accordion>
+
+<Accordion title="Verify participants">
+Always verify critical participants using SAS:
+
+```javascript
+const sas = await conference.getE2EESAS(participantId);
+// Compare SAS out-of-band (voice, video, etc.)
+await conference.markE2EEVerified(participantId, true);
+```
+</Accordion>
+
+<Accordion title="Rotate keys regularly">
+Rotate keys when participants leave:
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.USER_LEFT,
+    async (participantId) => {
+        // Key automatically rotates
+        console.log('Key rotated due to participant leaving');
+    }
+);
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Complete E2EE Example
+
+```javascript
+class E2EEManager {
+    constructor(conference) {
+        this.conference = conference;
+        this.key = null;
+        this.enabled = false;
+        
+        this.setupListeners();
+    }
+    
+    setupListeners() {
+        this.conference.on(
+            JitsiMeetJS.events.conference.E2EE_ENABLED,
+            () => this.onE2EEEnabled()
+        );
+        
+        this.conference.on(
+            JitsiMeetJS.events.conference.E2EE_DISABLED,
+            () => this.onE2EEDisabled()
+        );
+        
+        this.conference.on(
+            JitsiMeetJS.events.conference.E2EE_VERIFICATION_AVAILABLE,
+            (id) => this.onVerificationAvailable(id)
+        );
+    }
+    
+    async enable(passphrase) {
+        if (!this.conference.isE2EESupported()) {
+            throw new Error('E2EE not supported');
+        }
+        
+        // Derive key from passphrase
+        this.key = await this.deriveKey(passphrase);
+        
+        // Enable E2EE
+        await this.conference.toggleE2EE(true);
+        await this.conference.setE2EEKey(this.key);
+        
+        this.enabled = true;
+    }
+    
+    async disable() {
+        await this.conference.toggleE2EE(false);
+        this.key = null;
+        this.enabled = false;
+    }
+    
+    async deriveKey(passphrase) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(passphrase);
+        const hash = await crypto.subtle.digest('SHA-256', data);
+        return new Uint8Array(hash);
+    }
+    
+    async verifyParticipant(participantId) {
+        const sas = await this.conference.getE2EESAS(participantId);
+        
+        // Show SAS to user for comparison
+        const confirmed = await this.showSASVerification(participantId, sas);
+        
+        if (confirmed) {
+            await this.conference.markE2EEVerified(participantId, true);
+        }
+    }
+    
+    onE2EEEnabled() {
+        console.log('E2EE is now active');
+        this.updateUI({ encrypted: true });
+    }
+    
+    onE2EEDisabled() {
+        console.log('E2EE is now inactive');
+        this.updateUI({ encrypted: false });
+    }
+    
+    onVerificationAvailable(participantId) {
+        console.log('Can verify', participantId);
+        // Optionally auto-verify or prompt user
+    }
+    
+    updateUI(state) {
+        // Update UI to show E2EE status
+    }
+    
+    async showSASVerification(participantId, sas) {
+        // Show SAS UI and get user confirmation
+        return new Promise((resolve) => {
+            // Show modal with SAS emoji
+            // Return true if user confirms match
+        });
+    }
+}
+
+// Usage
+const e2eeManager = new E2EEManager(conference);
+
+// Enable E2EE with passphrase
+await e2eeManager.enable('my-secure-passphrase');
+
+// Verify a participant
+await e2eeManager.verifyParticipant('participant-id');
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Recording" icon="record-vinyl" href="/guides/recording">
+    Record conferences (note: incompatible with E2EE)
+  </Card>
+  <Card title="Statistics & Analytics" icon="chart-line" href="/guides/statistics-analytics">
+    Monitor conference metrics
+  </Card>
+</CardGroup>

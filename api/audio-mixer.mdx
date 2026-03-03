@@ -1,0 +1,322 @@
+---
+title: AudioMixer
+description: Mix multiple MediaStreams containing audio tracks into a single stream
+---
+
+## Overview
+
+AudioMixer uses the Web Audio API to combine multiple MediaStreams with audio tracks into a single mixed MediaStream. This is useful for scenarios like mixing multiple audio sources for recording or combining audio tracks for processing.
+
+## Constructor
+
+Create a new AudioMixer instance.
+
+```typescript
+const mixer = new AudioMixer()
+```
+
+The mixer starts in an uninitialized state. Add MediaStreams first, then call `start()` to begin mixing.
+
+## Methods
+
+### addMediaStream
+
+Adds an audio MediaStream to be mixed. If the stream doesn't contain audio tracks, a warning is logged but the stream is still added.
+
+```typescript
+addMediaStream(stream: MediaStream): void
+```
+
+<ParamField path="stream" type="MediaStream" required>
+  The MediaStream to be mixed. Should contain at least one audio track.
+</ParamField>
+
+**Example:**
+
+```javascript
+const mixer = new AudioMixer();
+
+// Add first audio stream
+navigator.mediaDevices.getUserMedia({ audio: true })
+  .then(stream1 => {
+    mixer.addMediaStream(stream1);
+  });
+
+// Add second audio stream
+navigator.mediaDevices.getUserMedia({ 
+  audio: { deviceId: 'another-device-id' } 
+})
+  .then(stream2 => {
+    mixer.addMediaStream(stream2);
+  });
+```
+
+<Warning>
+  If a MediaStream without audio tracks is added, the mixer will log a warning: "Added MediaStream doesn't contain audio tracks."
+</Warning>
+
+### start
+
+Initializes the Web Audio graph and starts mixing all added MediaStreams. Returns the mixed output stream.
+
+```typescript
+start(): Nullable<MediaStream>
+```
+
+**Returns:** `MediaStream` containing the mixed audio, or `null` if no MediaStreams were added.
+
+**How it works:**
+1. Creates an AudioContext
+2. Creates a MediaStreamAudioDestinationNode for output
+3. Creates MediaStreamAudioSourceNode for each input stream
+4. Connects all source nodes to the destination node
+5. Returns the mixed MediaStream
+
+**Example:**
+
+```javascript
+const mixer = new AudioMixer();
+
+// Add multiple audio sources
+mixer.addMediaStream(micStream);
+mixer.addMediaStream(systemAudioStream);
+mixer.addMediaStream(remoteParticipantStream);
+
+// Start mixing
+const mixedStream = mixer.start();
+
+if (mixedStream) {
+  // Use the mixed stream
+  const audioElement = document.createElement('audio');
+  audioElement.srcObject = mixedStream;
+  audioElement.play();
+  
+  // Or attach to a recorder
+  const recorder = new MediaRecorder(mixedStream);
+  recorder.start();
+} else {
+  console.error('No audio streams to mix');
+}
+```
+
+<Info>
+  If `start()` is called multiple times, it returns the existing mixed stream without recreating the audio graph.
+</Info>
+
+### reset
+
+Disconnects all audio nodes and clears all references. Call this to clean up when done with the mixer.
+
+```typescript
+reset(): void
+```
+
+This method:
+- Disconnects all MediaStreamAudioSourceNode instances
+- Clears the list of streams to mix
+- Cleans up the AudioContext and destination node
+- Resets the started state
+
+**Example:**
+
+```javascript
+const mixer = new AudioMixer();
+mixer.addMediaStream(stream1);
+mixer.addMediaStream(stream2);
+const mixedStream = mixer.start();
+
+// When done with mixing
+mixer.reset();
+
+// Can reuse the mixer with new streams
+mixer.addMediaStream(newStream);
+const newMixedStream = mixer.start();
+```
+
+## Complete Example
+
+### Basic Audio Mixing
+
+```javascript
+import AudioMixer from '@jitsi/lib-jitsi-meet/modules/webaudio/AudioMixer';
+
+class MultiSourceAudioMixer {
+  constructor() {
+    this.mixer = new AudioMixer();
+    this.streams = [];
+  }
+
+  async addMicrophone(deviceId) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { deviceId }
+    });
+    
+    this.streams.push(stream);
+    this.mixer.addMediaStream(stream);
+    
+    return stream;
+  }
+
+  async addScreenAudio() {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      audio: true,
+      video: false
+    });
+    
+    this.streams.push(stream);
+    this.mixer.addMediaStream(stream);
+    
+    return stream;
+  }
+
+  startMixing() {
+    const mixedStream = this.mixer.start();
+    
+    if (!mixedStream) {
+      throw new Error('No streams added to mixer');
+    }
+    
+    return mixedStream;
+  }
+
+  cleanup() {
+    // Stop all source streams
+    this.streams.forEach(stream => {
+      stream.getTracks().forEach(track => track.stop());
+    });
+    
+    // Reset the mixer
+    this.mixer.reset();
+    this.streams = [];
+  }
+}
+
+// Usage
+const multiMixer = new MultiSourceAudioMixer();
+
+// Add multiple audio sources
+await multiMixer.addMicrophone('default');
+await multiMixer.addScreenAudio();
+
+// Start mixing
+const mixedStream = multiMixer.startMixing();
+
+// Use the mixed stream for recording
+const mediaRecorder = new MediaRecorder(mixedStream, {
+  mimeType: 'audio/webm'
+});
+
+mediaRecorder.ondataavailable = (event) => {
+  // Handle recorded audio chunks
+  console.log('Recorded chunk:', event.data);
+};
+
+mediaRecorder.start();
+
+// Later, cleanup
+multiMixer.cleanup();
+```
+
+### Mixing Remote Participant Audio
+
+```javascript
+import JitsiMeetJS from '@jitsi/lib-jitsi-meet';
+import AudioMixer from '@jitsi/lib-jitsi-meet/modules/webaudio/AudioMixer';
+
+class ConferenceAudioMixer {
+  constructor(conference) {
+    this.conference = conference;
+    this.mixer = new AudioMixer();
+    this.trackMap = new Map();
+  }
+
+  setupRemoteTrackListener() {
+    this.conference.on(
+      JitsiMeetJS.events.conference.TRACK_ADDED,
+      (track) => {
+        if (track.isAudioTrack() && !track.isLocal()) {
+          const stream = track.getOriginalStream();
+          this.trackMap.set(track.getId(), stream);
+          this.mixer.addMediaStream(stream);
+          
+          console.log(`Added remote audio from ${track.getParticipantId()}`);
+        }
+      }
+    );
+
+    this.conference.on(
+      JitsiMeetJS.events.conference.TRACK_REMOVED,
+      (track) => {
+        if (this.trackMap.has(track.getId())) {
+          // Need to rebuild mixer when tracks are removed
+          this.rebuildMixer();
+        }
+      }
+    );
+  }
+
+  rebuildMixer() {
+    this.mixer.reset();
+    this.trackMap.forEach(stream => {
+      this.mixer.addMediaStream(stream);
+    });
+    return this.mixer.start();
+  }
+
+  getMixedStream() {
+    return this.mixer.start();
+  }
+
+  destroy() {
+    this.mixer.reset();
+    this.trackMap.clear();
+  }
+}
+
+// Usage in conference
+const conference = connection.initJitsiConference('room', {});
+const audioMixer = new ConferenceAudioMixer(conference);
+
+audioMixer.setupRemoteTrackListener();
+
+conference.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED, () => {
+  // Wait a bit for participants to join
+  setTimeout(() => {
+    const mixedAudio = audioMixer.getMixedStream();
+    if (mixedAudio) {
+      console.log('Got mixed audio from all participants');
+      // Use mixed audio for processing/recording
+    }
+  }, 2000);
+});
+```
+
+## Browser Support
+
+AudioMixer uses the Web Audio API, which is supported in all modern browsers:
+
+- Chrome/Edge 14+
+- Firefox 25+
+- Safari 6+
+- Opera 15+
+
+<Note>
+  AudioContext is automatically created with default sample rate. The mixer handles all audio graph setup internally.
+</Note>
+
+## Common Use Cases
+
+1. **Recording multiple audio sources** - Mix microphone + system audio for screen recordings
+2. **Conference audio mixing** - Combine all participant audio for processing
+3. **Audio monitoring** - Mix multiple inputs for real-time monitoring
+4. **Custom audio processing** - Pre-mix audio before applying effects
+
+## Important Notes
+
+<Warning>
+  Always call `reset()` when done with the mixer to properly clean up AudioContext and disconnect nodes. This prevents memory leaks.
+</Warning>
+
+<Info>
+  The mixer performs a simple mixing operation by connecting all sources to a single destination. Audio levels are not automatically adjusted - you may want to apply gain control for better balance.
+</Info>

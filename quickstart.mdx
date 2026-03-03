@@ -1,80 +1,421 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quick Start
+description: Create your first Jitsi Meet video conference with lib-jitsi-meet
 ---
 
-## Get started in three steps
+# Quick Start Guide
 
-Get your documentation site running locally and make your first customization.
+This guide walks you through creating a basic video conference using lib-jitsi-meet. You'll learn the essential steps: initialization, creating local tracks, connecting to a server, and joining a conference.
 
-### Step 1: Set up your local environment
+## Prerequisites
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+- lib-jitsi-meet installed ([Installation Guide](/installation))
+- A Jitsi Meet deployment or JaaS (Jitsi as a Service) account
+- Modern browser with WebRTC support
+
+## Basic Conference Flow
+
+The typical flow for creating a conference:
+
+<Steps>
+  <Step title="Initialize JitsiMeetJS">
+    Call `init()` before using any other library functions:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```javascript
+    import JitsiMeetJS from 'lib-jitsi-meet';
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    // Initialize with options
+    JitsiMeetJS.init({
+      enableAnalyticsLogging: false,
+      disableAudioLevels: false,
+      disableThirdPartyRequests: false,
+    });
+    ```
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    Available initialization options (from `JitsiMeetJS.ts:89-106`):
+    
+    ```typescript
+    interface IJitsiMeetJSOptions {
+      analytics?: {
+        rtcstatsLogFlushSizeBytes?: number;
+        rtcstatsStoreLogs?: boolean;
+      };
+      audioLevelsInterval?: number;
+      desktopSharingSources?: Array<'screen' | 'window'>;
+      disableAudioLevels?: boolean;
+      disableThirdPartyRequests?: boolean;
+      enableAnalyticsLogging?: boolean;
+      enableWindowOnErrorHandler?: boolean;
+      externalStorage?: Storage;
+      flags?: {
+        runInLiteMode?: boolean;
+        ssrcRewritingEnabled?: boolean;
+      };
+      pcStatsInterval?: number;
+    }
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Create Local Tracks">
+    Request access to camera and microphone:
+    
+    ```javascript
+    // Create audio and video tracks
+    const tracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['audio', 'video'],
+      resolution: '720',
+      constraints: {
+        video: {
+          height: { ideal: 720, max: 720, min: 180 },
+          width: { ideal: 1280, max: 1280, min: 320 }
+        }
+      }
+    });
+    
+    // Attach tracks to DOM elements
+    tracks.forEach(track => {
+      if (track.getType() === 'video') {
+        const videoElement = document.getElementById('localVideo');
+        track.attach(videoElement);
+      } else {
+        const audioElement = document.getElementById('localAudio');
+        track.attach(audioElement);
+      }
+    });
+    ```
+    
+    Options for `createLocalTracks()` (from `JitsiMeetJS.ts:79-85`):
+    
+    ```typescript
+    interface ICreateLocalTrackOptions {
+      cameraDeviceId?: string;      // Specific camera device ID
+      devices?: any[];              // Array of 'audio', 'video', 'desktop'
+      fireSlowPromiseEvent?: boolean;
+      micDeviceId?: string;         // Specific microphone device ID
+      resolution?: string;          // '720', '1080', etc.
+    }
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Create JitsiConnection">
+    Establish a connection to the Jitsi Meet server:
+    
+    ```javascript
+    import { JitsiConnectionEvents } from 'lib-jitsi-meet/JitsiConnectionEvents';
+    
+    const connection = new JitsiMeetJS.JitsiConnection(
+      null,  // appId (optional for self-hosted)
+      null,  // token (JWT for authentication)
+      {
+        hosts: {
+          domain: 'meet.jit.si',
+          muc: 'conference.meet.jit.si'
+        },
+        serviceUrl: 'wss://meet.jit.si/xmpp-websocket',
+        enableWebsocketResume: true
+      }
+    );
+    
+    // Handle connection events
+    connection.addEventListener(
+      JitsiConnectionEvents.CONNECTION_ESTABLISHED,
+      onConnectionSuccess
+    );
+    
+    connection.addEventListener(
+      JitsiConnectionEvents.CONNECTION_FAILED,
+      onConnectionFailed
+    );
+    
+    connection.addEventListener(
+      JitsiConnectionEvents.CONNECTION_DISCONNECTED,
+      onDisconnected
+    );
+    
+    // Connect
+    connection.connect();
+    ```
+    
+    Connection options (from `JitsiConnection.ts:16-34`):
+    
+    ```typescript
+    interface IConnectionOptions {
+      hosts: {
+        domain: string;           // XMPP domain
+        muc?: string;            // Multi-user chat domain
+      };
+      serviceUrl: string;         // WebSocket URL
+      enableWebsocketResume: boolean;
+      websocketKeepAlive?: number;
+      websocketKeepAliveUrl?: string;
+      p2pStunServers?: any[];
+    }
+    ```
+  </Step>
 
-### Step 3: Go live
+  <Step title="Initialize and Join Conference">
+    Once connected, create and join a conference:
+    
+    ```javascript
+    import { JitsiConferenceEvents } from 'lib-jitsi-meet/JitsiConferenceEvents';
+    
+    function onConnectionSuccess() {
+      // Create conference
+      const conference = connection.initJitsiConference('my-room-name', {
+        openBridgeChannel: true,
+        p2p: {
+          enabled: true,
+          preferredCodec: 'VP9'
+        }
+      });
+      
+      // Add local tracks
+      tracks.forEach(track => conference.addTrack(track));
+      
+      // Handle conference events
+      conference.on(JitsiConferenceEvents.TRACK_ADDED, onRemoteTrack);
+      conference.on(JitsiConferenceEvents.TRACK_REMOVED, onTrackRemoved);
+      conference.on(JitsiConferenceEvents.USER_JOINED, onUserJoined);
+      conference.on(JitsiConferenceEvents.USER_LEFT, onUserLeft);
+      conference.on(JitsiConferenceEvents.CONFERENCE_JOINED, onConferenceJoined);
+      
+      // Join the conference
+      conference.join();
+    }
+    
+    function onConferenceJoined() {
+      console.log('Successfully joined conference!');
+    }
+    ```
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Handle Remote Tracks">
+    Display remote participant media:
+    
+    ```javascript
+    import { JitsiTrackEvents } from 'lib-jitsi-meet/JitsiTrackEvents';
+    
+    function onRemoteTrack(track) {
+      if (track.isLocal()) return;
+      
+      const participantId = track.getParticipantId();
+      
+      // Create container for remote participant
+      if (!document.getElementById(participantId)) {
+        const container = document.createElement('div');
+        container.id = participantId;
+        document.getElementById('remoteVideos').appendChild(container);
+      }
+      
+      // Attach the track
+      if (track.getType() === 'video') {
+        const video = document.createElement('video');
+        video.autoplay = true;
+        video.id = `${participantId}-video`;
+        document.getElementById(participantId).appendChild(video);
+        track.attach(video);
+      } else {
+        const audio = document.createElement('audio');
+        audio.autoplay = true;
+        audio.id = `${participantId}-audio`;
+        document.getElementById(participantId).appendChild(audio);
+        track.attach(audio);
+      }
+    }
+    
+    function onTrackRemoved(track) {
+      if (track.isLocal()) return;
+      
+      const id = track.getType() === 'video' 
+        ? `${track.getParticipantId()}-video`
+        : `${track.getParticipantId()}-audio`;
+      
+      const element = document.getElementById(id);
+      if (element) {
+        element.remove();
+      }
+    }
+    ```
+  </Step>
+</Steps>
 
-## Next steps
+## Complete Example
 
-Now that you have your docs running, explore these key features:
+Here's a complete working example:
+
+```javascript
+import JitsiMeetJS from 'lib-jitsi-meet';
+import { JitsiConnectionEvents } from 'lib-jitsi-meet/JitsiConnectionEvents';
+import { JitsiConferenceEvents } from 'lib-jitsi-meet/JitsiConferenceEvents';
+
+let connection = null;
+let conference = null;
+let localTracks = [];
+
+// Initialize
+JitsiMeetJS.init();
+
+// Set log level (optional)
+JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.ERROR);
+
+async function joinConference(roomName) {
+  try {
+    // Create local tracks
+    localTracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['audio', 'video']
+    });
+    
+    // Attach local tracks to DOM
+    localTracks.forEach(track => {
+      if (track.getType() === 'video') {
+        track.attach(document.getElementById('localVideo'));
+      }
+    });
+    
+    // Create connection
+    connection = new JitsiMeetJS.JitsiConnection(null, null, {
+      hosts: {
+        domain: 'meet.jit.si',
+        muc: 'conference.meet.jit.si'
+      },
+      serviceUrl: 'wss://meet.jit.si/xmpp-websocket',
+      enableWebsocketResume: true
+    });
+    
+    // Connection event handlers
+    connection.addEventListener(
+      JitsiConnectionEvents.CONNECTION_ESTABLISHED,
+      () => onConnectionEstablished(roomName)
+    );
+    
+    connection.addEventListener(
+      JitsiConnectionEvents.CONNECTION_FAILED,
+      (error) => console.error('Connection failed:', error)
+    );
+    
+    // Connect
+    connection.connect();
+    
+  } catch (error) {
+    console.error('Error joining conference:', error);
+  }
+}
+
+function onConnectionEstablished(roomName) {
+  // Initialize conference
+  conference = connection.initJitsiConference(roomName, {
+    openBridgeChannel: true
+  });
+  
+  // Conference event handlers
+  conference.on(JitsiConferenceEvents.CONFERENCE_JOINED, () => {
+    console.log('Conference joined!');
+  });
+  
+  conference.on(JitsiConferenceEvents.TRACK_ADDED, (track) => {
+    if (!track.isLocal()) {
+      const participantId = track.getParticipantId();
+      const element = track.getType() === 'video' 
+        ? document.getElementById(`remote-video-${participantId}`)
+        : document.getElementById(`remote-audio-${participantId}`);
+      
+      if (element) {
+        track.attach(element);
+      }
+    }
+  });
+  
+  conference.on(JitsiConferenceEvents.USER_JOINED, (id, user) => {
+    console.log('User joined:', id);
+  });
+  
+  conference.on(JitsiConferenceEvents.USER_LEFT, (id) => {
+    console.log('User left:', id);
+  });
+  
+  // Add local tracks
+  localTracks.forEach(track => conference.addTrack(track));
+  
+  // Join conference
+  conference.join();
+}
+
+// Usage
+joinConference('my-test-room');
+```
+
+## Simplified API with joinConference()
+
+For JaaS users, lib-jitsi-meet provides a simplified `joinConference()` method that handles everything automatically (from `JitsiMeetJS.ts:448-526`):
+
+```javascript
+// Simple JaaS conference join
+const conference = await JitsiMeetJS.joinConference(
+  'my-room-name',
+  'vpaas-magic-cookie-1234567890abcdef',  // JaaS app ID
+  'your-jwt-token',
+  {
+    tracks: localTracks,  // Optional: pre-created tracks
+    conferenceOptions: {
+      openBridgeChannel: true
+    }
+  }
+);
+
+// Conference is ready to use
+conference.on(JitsiConferenceEvents.USER_JOINED, (id) => {
+  console.log('User joined:', id);
+});
+```
+
+This method automatically:
+- Configures JaaS endpoints and domains
+- Creates the connection
+- Initializes the conference
+- Adds tracks and joins
+- Sets up receiver constraints
+
+## Event Handling Reference
+
+Key events you'll commonly handle:
+
+**Connection Events** (from `JitsiConnectionEvents`)
+- `CONNECTION_ESTABLISHED` - Connected to server
+- `CONNECTION_FAILED` - Connection failed
+- `CONNECTION_DISCONNECTED` - Disconnected from server
+
+**Conference Events** (from `JitsiConferenceEvents`)
+- `CONFERENCE_JOINED` - Successfully joined conference
+- `CONFERENCE_LEFT` - Left the conference
+- `USER_JOINED` - Remote participant joined
+- `USER_LEFT` - Remote participant left
+- `TRACK_ADDED` - Media track added (local or remote)
+- `TRACK_REMOVED` - Media track removed
+- `TRACK_MUTE_CHANGED` - Track mute status changed
+- `DISPLAY_NAME_CHANGED` - Participant display name changed
+- `DOMINANT_SPEAKER_CHANGED` - Active speaker changed
+
+**Track Events** (from `JitsiTrackEvents`)
+- `TRACK_AUDIO_LEVEL_CHANGED` - Audio level changed
+- `TRACK_MUTE_CHANGED` - Mute status changed
+- `LOCAL_TRACK_STOPPED` - Local track stopped
+- `NO_DATA_FROM_SOURCE` - No data from media source
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="API Reference"
+    icon="book"
+    href="/api/jitsi-meet-js"
+  >
+    Explore the complete API documentation
+  </Card>
+  <Card
+    title="Advanced Features"
+    icon="wand-magic-sparkles"
+    href="/advanced/webrtc-internals"
+  >
+    Learn about E2EE, screen sharing, and quality control
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

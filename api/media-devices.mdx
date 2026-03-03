@@ -1,0 +1,283 @@
+---
+title: JitsiMediaDevices
+description: Media device enumeration and management
+---
+
+## Overview
+
+The `JitsiMediaDevices` class provides utilities for managing media devices in Jitsi. It handles device enumeration, permission checking, and audio output device selection.
+
+## Constructor
+
+```typescript
+constructor()
+```
+
+Initializes a `JitsiMediaDevices` object. There will be a single instance of this class accessible via `JitsiMeetJS.mediaDevices`.
+
+## Methods
+
+### init()
+
+Initializes the media devices manager. Starts listening for device changes and initializes permission checks.
+
+```typescript
+init(): void
+```
+
+<Note>
+This method is marked as internal and is automatically called by the library.
+</Note>
+
+### enumerateDevices()
+
+Executes a callback with a list of media devices connected.
+
+```typescript
+enumerateDevices(callback: (devices: MediaDeviceInfo[]) => void): void
+```
+
+<ParamField path="callback" type="Function" required>
+  Function that will be called with an array of MediaDeviceInfo objects
+</ParamField>
+
+### isDeviceChangeAvailable()
+
+Returns true if changing the input (camera/microphone) or output (audio) device is supported.
+
+```typescript
+isDeviceChangeAvailable(deviceType?: string): boolean
+```
+
+<ParamField path="deviceType" type="string">
+  Type of device to check. Options:
+  - `undefined` or `'input'` - Check for input device change support (default)
+  - `'output'` - Check for audio output device change support
+</ParamField>
+
+<ResponseField name="available" type="boolean">
+  True if device change is available, false otherwise
+</ResponseField>
+
+### isDevicePermissionGranted()
+
+Checks if the permission for the given device was granted.
+
+```typescript
+isDevicePermissionGranted(type?: MediaType): Promise<boolean>
+```
+
+<ParamField path="type" type="MediaType">
+  Type of device to check:
+  - `'audio'` - Check microphone permission
+  - `'video'` - Check camera permission
+  - `undefined` - Check both audio and video permissions
+</ParamField>
+
+<ResponseField name="Promise<boolean>" type="Promise">
+  Resolves with true if permission is granted, false otherwise
+</ResponseField>
+
+### isMultipleAudioInputSupported()
+
+Returns true if it is possible to simultaneously capture audio from more than one device.
+
+```typescript
+isMultipleAudioInputSupported(): boolean
+```
+
+<ResponseField name="supported" type="boolean">
+  True if multiple audio inputs are supported, false otherwise
+</ResponseField>
+
+<Note>
+Returns false for Firefox versions below 101 and iOS browsers.
+</Note>
+
+### getAudioOutputDevice()
+
+Returns the currently used audio output device ID.
+
+```typescript
+getAudioOutputDevice(): string
+```
+
+<ResponseField name="deviceId" type="string">
+  The device ID of the current audio output device, or 'default' for the default device
+</ResponseField>
+
+### setAudioOutputDevice()
+
+Sets the current audio output device.
+
+```typescript
+setAudioOutputDevice(deviceId: string): Promise<void>
+```
+
+<ParamField path="deviceId" type="string" required>
+  ID of 'audiooutput' device from navigator.mediaDevices.enumerateDevices(), or 'default' for default device
+</ParamField>
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when audio output is changed, rejects otherwise
+</ResponseField>
+
+## Events
+
+JitsiMediaDevices extends the Listenable class and emits the following events:
+
+### DEVICE_LIST_CHANGED
+
+Fired when the list of available media devices changes (devices connected/disconnected).
+
+```javascript
+mediaDevices.addEventListener(
+  JitsiMediaDevicesEvents.DEVICE_LIST_CHANGED,
+  (devices) => {
+    console.log('Available devices:', devices);
+  }
+);
+```
+
+### PERMISSIONS_CHANGED
+
+Fired when media permissions change.
+
+```javascript
+mediaDevices.addEventListener(
+  JitsiMediaDevicesEvents.PERMISSIONS_CHANGED,
+  (permissions) => {
+    console.log('Audio permission:', permissions.audio);
+    console.log('Video permission:', permissions.video);
+  }
+);
+```
+
+## Example Usage
+
+### Enumerate Devices
+
+```javascript
+const mediaDevices = JitsiMeetJS.mediaDevices;
+
+mediaDevices.enumerateDevices((devices) => {
+  const audioInputs = devices.filter(d => d.kind === 'audioinput');
+  const videoInputs = devices.filter(d => d.kind === 'videoinput');
+  const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+  
+  console.log('Microphones:', audioInputs);
+  console.log('Cameras:', videoInputs);
+  console.log('Speakers:', audioOutputs);
+});
+```
+
+### Check Permissions
+
+```javascript
+const mediaDevices = JitsiMeetJS.mediaDevices;
+
+// Check if camera permission is granted
+const cameraGranted = await mediaDevices.isDevicePermissionGranted('video');
+console.log('Camera permission:', cameraGranted);
+
+// Check if microphone permission is granted
+const micGranted = await mediaDevices.isDevicePermissionGranted('audio');
+console.log('Microphone permission:', micGranted);
+
+// Check if both are granted
+const bothGranted = await mediaDevices.isDevicePermissionGranted();
+console.log('Both permissions:', bothGranted);
+```
+
+### Change Audio Output Device
+
+```javascript
+const mediaDevices = JitsiMeetJS.mediaDevices;
+
+// Check if changing output is supported
+if (mediaDevices.isDeviceChangeAvailable('output')) {
+  // Get available audio output devices
+  mediaDevices.enumerateDevices((devices) => {
+    const speakers = devices.filter(d => d.kind === 'audiooutput');
+    
+    if (speakers.length > 0) {
+      // Set the first available speaker
+      mediaDevices.setAudioOutputDevice(speakers[0].deviceId)
+        .then(() => {
+          console.log('Audio output changed successfully');
+        })
+        .catch((error) => {
+          console.error('Failed to change audio output:', error);
+        });
+    }
+  });
+} else {
+  console.log('Audio output change not supported');
+}
+```
+
+### Listen for Device Changes
+
+```javascript
+const mediaDevices = JitsiMeetJS.mediaDevices;
+
+mediaDevices.addEventListener(
+  JitsiMediaDevicesEvents.DEVICE_LIST_CHANGED,
+  (devices) => {
+    console.log('Device list updated:', devices.length, 'devices');
+    
+    // Update UI with new device list
+    updateDeviceSelector(devices);
+  }
+);
+
+mediaDevices.addEventListener(
+  JitsiMediaDevicesEvents.PERMISSIONS_CHANGED,
+  (permissions) => {
+    if (permissions.audio) {
+      console.log('Microphone permission granted');
+    }
+    if (permissions.video) {
+      console.log('Camera permission granted');
+    }
+  }
+);
+```
+
+### Check Browser Capabilities
+
+```javascript
+const mediaDevices = JitsiMeetJS.mediaDevices;
+
+// Check if changing input devices is supported
+if (mediaDevices.isDeviceChangeAvailable('input')) {
+  console.log('Can switch cameras/microphones');
+}
+
+// Check if multiple audio inputs are supported
+if (mediaDevices.isMultipleAudioInputSupported()) {
+  console.log('Can capture from multiple microphones simultaneously');
+} else {
+  console.log('Multiple audio inputs not supported on this browser');
+}
+```
+
+## MediaDeviceInfo Object
+
+The `enumerateDevices()` callback receives an array of MediaDeviceInfo objects with the following properties:
+
+<ResponseField name="deviceId" type="string">
+  Unique identifier for the device
+</ResponseField>
+
+<ResponseField name="kind" type="string">
+  The kind of device: 'audioinput', 'videoinput', or 'audiooutput'
+</ResponseField>
+
+<ResponseField name="label" type="string">
+  Human-readable device name (empty string if permission not granted)
+</ResponseField>
+
+<ResponseField name="groupId" type="string">
+  Group identifier (devices in the same physical device share the same group ID)
+</ResponseField>

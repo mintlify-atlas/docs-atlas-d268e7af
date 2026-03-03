@@ -1,0 +1,398 @@
+---
+title: JitsiConnection
+description: XMPP connection management for Jitsi Meet
+---
+
+`JitsiConnection` represents a connection to the Jitsi Meet XMPP server. It handles authentication, connection management, and provides access to conferences.
+
+## Constructor
+
+### new JitsiConnection()
+
+Creates a new connection instance.
+
+```javascript
+const connection = new JitsiMeetJS.JitsiConnection(appId, token, options);
+```
+
+<ParamField path="appId" type="string" required>
+  Application identifier for the Jitsi Meet service. For JaaS deployments, use your `vpaas-magic-cookie-*` app ID.
+</ParamField>
+
+<ParamField path="token" type="string | null" required>
+  JWT token for authentication. Can be `null` for guest access.
+</ParamField>
+
+<ParamField path="options" type="object" required>
+  Connection configuration options
+
+  <Expandable title="properties">
+    <ParamField path="serviceUrl" type="string" required>
+      WebSocket URL for XMPP connection (e.g., `wss://8x8.vc/xmpp-websocket`)
+    </ParamField>
+
+    <ParamField path="hosts" type="object" required>
+      <Expandable title="properties">
+        <ParamField path="domain" type="string" required>
+          XMPP domain (e.g., `8x8.vc`)
+        </ParamField>
+        <ParamField path="muc" type="string">
+          Multi-user chat domain (e.g., `conference.8x8.vc`)
+        </ParamField>
+        <ParamField path="anonymousdomain" type="string">
+          Domain for anonymous users
+        </ParamField>
+        <ParamField path="focus" type="string">
+          Jicofo component address
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="enableWebsocketResume" type="boolean" default="true">
+      Enable WebSocket stream resumption (XEP-0198)
+    </ParamField>
+
+    <ParamField path="websocketKeepAlive" type="number" default="240000">
+      WebSocket keep-alive interval in milliseconds
+    </ParamField>
+
+    <ParamField path="websocketKeepAliveUrl" type="string">
+      URL to use for keep-alive HTTP requests
+    </ParamField>
+
+    <ParamField path="xmppPing" type="object">
+      XMPP ping configuration
+      <Expandable title="properties">
+        <ParamField path="interval" type="number">
+          Ping interval in milliseconds
+        </ParamField>
+        <ParamField path="timeout" type="number">
+          Ping timeout in milliseconds
+        </ParamField>
+        <ParamField path="threshold" type="number">
+          Failed ping threshold before disconnecting
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="p2pStunServers" type="Array<object>">
+      STUN servers for P2P connections
+    </ParamField>
+
+    <ParamField path="bridgeChannel" type="object">
+      Bridge channel configuration
+      <Expandable title="properties">
+        <ParamField path="preferSctp" type="boolean" default="true">
+          Prefer SCTP data channel over WebSocket
+        </ParamField>
+        <ParamField path="ignoreDomain" type="string">
+          Domain to ignore for WebSocket bridge channel
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="disableFocus" type="boolean" default="false">
+      Disable Jicofo (focus) component
+    </ParamField>
+
+    <ParamField path="flags" type="object">
+      Feature flags
+    </ParamField>
+
+    <ParamField path="analytics" type="object">
+      Analytics configuration
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Connection Management
+
+### connect()
+
+Connects to the XMPP server.
+
+```javascript
+connection.connect(options);
+```
+
+<ParamField path="options" type="object">
+  Connection options
+
+  <Expandable title="properties">
+    <ParamField path="id" type="string">
+      Username for authenticated connection
+    </ParamField>
+
+    <ParamField path="password" type="string">
+      Password for authenticated connection
+    </ParamField>
+
+    <ParamField path="name" type="string">
+      Room name (required for sending conference-request over HTTP)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example:**
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+  () => {
+    console.log('Connected!');
+  }
+);
+
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_FAILED,
+  (error) => {
+    console.error('Connection failed:', error);
+  }
+);
+
+connection.connect({ name: 'myroom' });
+```
+
+### attach()
+
+Attaches to an existing XMPP connection (for connection reuse).
+
+```javascript
+connection.attach(options);
+```
+
+<ParamField path="options" type="object" required>
+  <Expandable title="properties">
+    <ParamField path="jid" type="string" required>
+      Full JID of the existing connection
+    </ParamField>
+
+    <ParamField path="sid" type="string" required>
+      Session ID of the existing connection
+    </ParamField>
+
+    <ParamField path="rid" type="string" required>
+      Request ID of the existing connection
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### disconnect()
+
+Disconnects from the XMPP server.
+
+```javascript
+await connection.disconnect();
+```
+
+<ResponseField name="result" type="Promise<void> | boolean">
+  Promise that resolves when disconnection is complete, or boolean for synchronous result
+</ResponseField>
+
+### refreshToken()
+
+Renews the JWT token if it's expiring.
+
+```javascript
+await connection.refreshToken(newToken);
+```
+
+<ParamField path="token" type="string" required>
+  The new JWT token
+</ParamField>
+
+<ResponseField name="result" type="Promise<void>">
+  Promise that resolves when token is refreshed
+</ResponseField>
+
+## Conference Management
+
+### initJitsiConference()
+
+Creates and initializes a new conference.
+
+```javascript
+const conference = connection.initJitsiConference(roomName, options);
+```
+
+<ParamField path="name" type="string" required>
+  Conference room name (must be lowercase)
+</ParamField>
+
+<ParamField path="options" type="object">
+  Conference configuration options. See [JitsiConference](/api/jitsi-conference) for details.
+</ParamField>
+
+<ResponseField name="conference" type="JitsiConference">
+  A new JitsiConference instance
+</ResponseField>
+
+**Example:**
+
+```javascript
+const conference = connection.initJitsiConference('myroom', {
+  openBridgeChannel: true,
+  p2p: {
+    enabled: true
+  }
+});
+
+conference.join();
+```
+
+## Event Management
+
+### addEventListener()
+
+Subscribes to connection events.
+
+```javascript
+connection.addEventListener(event, listener);
+```
+
+<ParamField path="event" type="string" required>
+  Event name from `JitsiMeetJS.events.connection`
+</ParamField>
+
+<ParamField path="listener" type="function" required>
+  Event handler function
+</ParamField>
+
+**Connection Events:**
+
+- `CONNECTION_ESTABLISHED` - Connection successfully established
+- `CONNECTION_FAILED` - Connection failed `(error: string, msg: string, credentials: object, details: object)`
+- `CONNECTION_DISCONNECTED` - Connection was disconnected `(msg: string)`
+- `WRONG_STATE` - Connection is in wrong state for the operation
+
+**Example:**
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+  () => {
+    console.log('Connected successfully');
+    const conference = connection.initJitsiConference('room1', {});
+    conference.join();
+  }
+);
+
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_FAILED,
+  (error, msg, credentials, details) => {
+    console.error('Connection failed:', error, msg);
+  }
+);
+```
+
+### removeEventListener()
+
+Unsubscribes from connection events.
+
+```javascript
+connection.removeEventListener(event, listener);
+```
+
+<ParamField path="event" type="string" required>
+  Event name to unsubscribe from
+</ParamField>
+
+<ParamField path="listener" type="function" required>
+  The event handler to remove
+</ParamField>
+
+## Information Methods
+
+### getJid()
+
+Returns the JID of the participant associated with the connection.
+
+```javascript
+const jid = connection.getJid();
+```
+
+<ResponseField name="jid" type="string">
+  Full JID of the connected participant (e.g., `user@domain/resource`)
+</ResponseField>
+
+### getConnectionTimes()
+
+Returns connection timing information for diagnostics.
+
+```javascript
+const times = connection.getConnectionTimes();
+```
+
+<ResponseField name="times" type="object">
+  Object containing connection timing metrics:
+  - `connecting` - When connection started
+  - `connected` - When connection was established
+  - Various XMPP-specific timings
+</ResponseField>
+
+### getLogs()
+
+Retrieves internal connection logs for debugging.
+
+```javascript
+const logs = connection.getLogs();
+```
+
+<ResponseField name="logs" type="object">
+  Object containing:
+  - `metadata` - Connection metadata (time, URL, user agent)
+  - `xmpp` - XMPP protocol logs
+  - Jingle session logs
+</ResponseField>
+
+## Feature Management
+
+### addFeature()
+
+Adds a feature to the local participant's capabilities.
+
+```javascript
+connection.addFeature(feature, submit);
+```
+
+<ParamField path="feature" type="string" required>
+  Feature URN to add (e.g., `urn:xmpp:jingle:apps:dtls:0`)
+</ParamField>
+
+<ParamField path="submit" type="boolean" default="false">
+  If `true`, immediately broadcast the updated feature list
+</ParamField>
+
+### removeFeature()
+
+Removes a feature from the local participant's capabilities.
+
+```javascript
+connection.removeFeature(feature, submit);
+```
+
+<ParamField path="feature" type="string" required>
+  Feature URN to remove
+</ParamField>
+
+<ParamField path="submit" type="boolean" default="false">
+  If `true`, immediately broadcast the updated feature list
+</ParamField>
+
+## Properties
+
+### options
+
+The connection configuration options (read-only).
+
+```javascript
+const domain = connection.options.hosts.domain;
+```
+
+### xmpp
+
+Internal XMPP connection instance (internal use only).
+
+<Warning>
+  This property is for internal library use. Direct manipulation may break functionality.
+</Warning>

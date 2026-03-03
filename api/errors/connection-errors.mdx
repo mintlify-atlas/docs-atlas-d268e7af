@@ -1,0 +1,240 @@
+---
+title: JitsiConnectionErrors
+description: Connection error constants and handling for lib-jitsi-meet
+---
+
+Connection errors that can occur during XMPP connection establishment and maintenance.
+
+## Error Constants
+
+### CONFERENCE_REQUEST_FAILED
+
+**Value:** `connection.conferenceRequestFailed`
+
+**Cause:** The conference request to jicofo (Jitsi Conference Focus) fails.
+
+**When it occurs:**
+- Jicofo service is unavailable or unreachable
+- Network issues preventing communication with jicofo
+- Invalid conference configuration
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.CONFERENCE_REQUEST_FAILED) {
+      // Retry after a delay or notify user that conference is unavailable
+      console.error('Conference request failed. The service may be unavailable.');
+      // Consider implementing exponential backoff retry logic
+    }
+  }
+);
+```
+
+---
+
+### CONNECTION_DROPPED_ERROR
+
+**Value:** `connection.droppedError`
+
+**Cause:** Connection was unexpectedly closed due to networking issues (not on user's request).
+
+**When it occurs:**
+- BOSH session times out after 60 seconds of inactivity
+- Network connectivity is lost
+- Prosody throws 'item-not-found' error due to session timeout
+- BOSH request sent with unknown session-id
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.CONNECTION_DROPPED_ERROR) {
+      // Attempt to reconnect automatically
+      console.warn('Connection dropped unexpectedly. Reconnecting...');
+      // Implement reconnection logic with user notification
+      reconnectWithBackoff();
+    }
+  }
+);
+```
+
+---
+
+### NOT_LIVE_ERROR
+
+**Value:** `connection.notLiveError`
+
+**Cause:** The conference is not ready according to jicofo.
+
+**When it occurs:**
+- Conference has not been fully initialized on the server
+- Jicofo is still setting up conference resources
+- Conference may have been shut down
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.NOT_LIVE_ERROR) {
+      // Wait and retry joining the conference
+      console.warn('Conference is not ready yet.');
+      setTimeout(() => retryJoin(), 2000);
+    }
+  }
+);
+```
+
+---
+
+### OTHER_ERROR
+
+**Value:** `connection.otherError`
+
+**Cause:** Unspecified or unknown connection errors.
+
+**When it occurs:**
+- Errors that don't fit into other specific categories
+- Unexpected server responses
+- Protocol-level errors
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.OTHER_ERROR) {
+      // Log detailed error information for debugging
+      console.error('An unspecified connection error occurred.');
+      // Display generic error message to user
+      showErrorNotification('Connection failed. Please try again.');
+    }
+  }
+);
+```
+
+---
+
+### PASSWORD_REQUIRED
+
+**Value:** `connection.passwordRequired`
+
+**Cause:** A password is required to join the conference.
+
+**When it occurs:**
+- Conference room is password-protected
+- Attempting to join without providing credentials
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.PASSWORD_REQUIRED) {
+      // Prompt user for password
+      const password = await promptForPassword();
+      // Rejoin with password
+      room.join(password);
+    }
+  }
+);
+```
+
+---
+
+### SERVER_ERROR
+
+**Value:** `connection.serverError`
+
+**Cause:** Connection dropped due to too many 5xx HTTP errors on BOSH requests.
+
+**When it occurs:**
+- Server experiencing internal errors
+- Backend services failing repeatedly
+- Infrastructure issues on the server side
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.SERVER_ERROR) {
+      // Server is having issues, avoid aggressive retries
+      console.error('Server error detected. Please try again later.');
+      // Use longer backoff periods before retry
+      scheduleRetryWithLongBackoff();
+    }
+  }
+);
+```
+
+---
+
+### SHARD_CHANGED_ERROR
+
+**Value:** `connection.shardChangedError`
+
+**Cause:** Connection was dropped because the conference was moved to a new shard.
+
+**When it occurs:**
+- Server infrastructure is rebalancing conferences
+- Conference migrated to different server instance
+- Load balancing operations
+
+**Handling recommendations:**
+```javascript
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error) => {
+    if (error === JitsiConnectionErrors.SHARD_CHANGED_ERROR) {
+      // Reconnect to the new shard
+      console.info('Conference moved to new server. Reconnecting...');
+      // Immediately attempt reconnection
+      reconnectToConference();
+    }
+  }
+);
+```
+
+## Usage Example
+
+```javascript
+import { JitsiConnectionErrors } from 'lib-jitsi-meet';
+
+// Comprehensive error handling
+connection.addEventListener(
+  JitsiConnectionEvents.CONNECTION_FAILED,
+  (error, message, ...details) => {
+    console.error('Connection failed:', error, message, details);
+    
+    switch (error) {
+      case JitsiConnectionErrors.CONFERENCE_REQUEST_FAILED:
+        handleConferenceRequestFailed();
+        break;
+      case JitsiConnectionErrors.CONNECTION_DROPPED_ERROR:
+        handleConnectionDropped();
+        break;
+      case JitsiConnectionErrors.PASSWORD_REQUIRED:
+        handlePasswordRequired();
+        break;
+      case JitsiConnectionErrors.SERVER_ERROR:
+        handleServerError();
+        break;
+      case JitsiConnectionErrors.SHARD_CHANGED_ERROR:
+        handleShardChanged();
+        break;
+      default:
+        handleGenericError(error, message);
+    }
+  }
+);
+```
+
+## See Also
+
+- [JitsiConnection API](/api/jitsi-connection)
+- [Connection Events](/api/events/connection-events)
+- [Conference Errors](/api/errors/conference-errors)

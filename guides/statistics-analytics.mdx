@@ -1,0 +1,718 @@
+---
+title: Statistics & Analytics
+description: Monitor performance metrics and collect analytics data
+---
+
+This guide covers statistics collection, analytics reporting, and performance monitoring in lib-jitsi-meet using the Statistics module and RTCStats integration.
+
+## Overview
+
+lib-jitsi-meet provides comprehensive statistics through:
+
+- **Statistics Module**: Collects and reports conference metrics
+- **RTCStats**: Detailed WebRTC statistics via rtcstats-server
+- **Local Stats**: Audio levels and track statistics
+- **RTP Stats**: Peer connection statistics
+- **Speaker Stats**: Track speaking time and dominant speaker
+- **Analytics Events**: Send custom analytics events
+
+## Initializing Statistics
+
+<Steps>
+
+<Step title="Configure statistics on init">
+```javascript
+JitsiMeetJS.init({
+    // Disable audio level stats
+    disableAudioLevels: false,
+    
+    // Audio level collection interval (ms)
+    audioLevelsInterval: 200,
+    
+    // Peer connection stats interval (ms)
+    pcStatsInterval: 10000,
+    
+    // Disable third-party analytics
+    disableThirdPartyRequests: false
+});
+```
+</Step>
+
+<Step title="Initialize conference statistics">
+```javascript
+const conferenceOptions = {
+    // Statistics configuration
+    statisticsId: 'user-123',
+    statisticsDisplayName: 'John Doe',
+    confID: 'room-name-12345',
+    
+    // Application name for analytics
+    applicationName: 'MyApp',
+    
+    // Disable local stats (for testing)
+    disableLocalStats: false,
+    disableLocalStatsBroadcast: false,
+    
+    // Average RTP stats sample size
+    avgRtpStatsN: 15,
+    
+    // RTCStats configuration
+    analytics: {
+        rtcstatsEnabled: true,
+        rtcstatsEndpoint: 'wss://rtcstats-server.com',
+        rtcstatsPollInterval: 10000,
+        rtcstatsSendSdp: true
+    }
+};
+
+const conference = connection.initJitsiConference('room', conferenceOptions);
+```
+</Step>
+
+</Steps>
+
+## Audio Levels
+
+### Local Audio Levels
+
+```javascript
+// Audio levels are collected automatically for local tracks
+localAudioTrack.addEventListener(
+    JitsiMeetJS.events.track.TRACK_AUDIO_LEVEL_CHANGED,
+    (audioLevel) => {
+        // audioLevel: 0.0 to 1.0
+        console.log('Local audio level:', audioLevel);
+        updateAudioMeter(audioLevel);
+    }
+);
+
+// Disable audio levels if needed
+const statisticsOptions = {
+    disableAudioLevels: true
+};
+```
+
+### Remote Audio Levels
+
+```javascript
+// Listen for remote participant audio levels
+conference.on(
+    JitsiMeetJS.events.conference.TRACK_AUDIO_LEVEL_CHANGED,
+    (participantId, audioLevel) => {
+        console.log(`Audio level for ${participantId}:`, audioLevel);
+        
+        // Update UI
+        const participant = conference.getParticipantById(participantId);
+        if (participant) {
+            updateParticipantAudioMeter(participantId, audioLevel);
+        }
+    }
+);
+```
+
+## Connection Statistics
+
+### Monitor Connection Quality
+
+```javascript
+// Overall connection quality
+conference.on(
+    JitsiMeetJS.events.conference.CONNECTION_STATS,
+    (stats) => {
+        console.log('Connection stats:', {
+            bandwidth: stats.bandwidth,
+            bitrate: stats.bitrate,
+            packetLoss: stats.packetLoss,
+            connectionQuality: stats.connectionQuality, // 0-100
+            e2eRtt: stats.e2eRtt,
+            jvbRtt: stats.jvbRtt,
+            maxEnabledResolution: stats.maxEnabledResolution,
+            region: stats.region,
+            transport: stats.transport
+        });
+        
+        // Update UI based on quality
+        if (stats.connectionQuality < 30) {
+            showPoorConnectionWarning();
+        }
+    }
+);
+```
+
+### Per-Participant Statistics
+
+```javascript
+// Get statistics for specific participant
+const participantStats = conference.getParticipantStats(participantId);
+
+if (participantStats) {
+    console.log('Participant stats:', {
+        audioLevel: participantStats.audioLevel,
+        bitrate: participantStats.bitrate,
+        codec: participantStats.codec,
+        framerate: participantStats.framerate,
+        packetLoss: participantStats.packetLoss,
+        resolution: participantStats.resolution
+    });
+}
+```
+
+## RTP Statistics
+
+### Get RTP Stats
+
+```javascript
+// RTP stats are collected automatically
+conference.on(
+    JitsiMeetJS.events.conference.RTP_STATS,
+    (stats) => {
+        console.log('RTP stats:', stats);
+        
+        // Stats include:
+        // - Bitrate (upload/download)
+        // - Packet loss
+        // - Jitter
+        // - RTT (round-trip time)
+        // - Frame rate
+        // - Resolution
+    }
+);
+```
+
+### Average RTP Stats
+
+```javascript
+// Get average stats over time
+conference.on(
+    JitsiMeetJS.events.conference.BEFORE_STATISTICS_DISPOSED,
+    () => {
+        const avgStats = conference.avgRtpStatsReporter?.getStats();
+        
+        if (avgStats) {
+            console.log('Average stats:', {
+                bitrate: avgStats.bitrate,
+                packetLoss: avgStats.packetLoss,
+                framerate: avgStats.framerate,
+                jitter: avgStats.jitter,
+                rtt: avgStats.rtt
+            });
+        }
+    }
+);
+```
+
+## Speaker Statistics
+
+### Track Speaking Time
+
+```javascript
+// Speaker stats are collected automatically
+conference.on(
+    JitsiMeetJS.events.conference.SPEAKER_STATS_RECEIVED,
+    (stats) => {
+        // stats is an object with participant IDs as keys
+        Object.keys(stats).forEach(participantId => {
+            const speakerStats = stats[participantId];
+            
+            console.log('Speaker stats:', {
+                participantId,
+                displayName: speakerStats.displayName,
+                totalDominantSpeakerTime: speakerStats.totalDominantSpeakerTime,
+                faceLandmarks: speakerStats.faceLandmarks
+            });
+        });
+        
+        // Display speaking time in UI
+        displaySpeakerStats(stats);
+    }
+);
+```
+
+### Get Speaker Stats
+
+```javascript
+// Get speaker stats from conference
+const speakerStats = conference.getSpeakerStats();
+
+if (speakerStats) {
+    const participants = Object.keys(speakerStats);
+    
+    participants.forEach(participantId => {
+        const stats = speakerStats[participantId];
+        const timeInMs = stats.totalDominantSpeakerTime;
+        const timeInSeconds = Math.floor(timeInMs / 1000);
+        
+        console.log(`${stats.displayName} spoke for ${timeInSeconds}s`);
+    });
+}
+```
+
+## RTCStats Integration
+
+### Enable RTCStats
+
+```javascript
+const conferenceOptions = {
+    analytics: {
+        // Enable RTCStats
+        rtcstatsEnabled: true,
+        
+        // RTCStats server WebSocket URL
+        rtcstatsEndpoint: 'wss://rtcstats.example.com',
+        
+        // Stats collection interval (ms)
+        rtcstatsPollInterval: 10000,
+        
+        // Send SDP in stats
+        rtcstatsSendSdp: true
+    }
+};
+```
+
+### RTCStats Events
+
+```javascript
+// Listen for RTCStats events
+JitsiMeetJS.analytics.on(
+    'rtcstats.trace',
+    (event) => {
+        console.log('RTCStats event:', event);
+    }
+);
+
+// Monitor connection to RTCStats server
+JitsiMeetJS.analytics.on(
+    'rtcstats.disconnect',
+    () => {
+        console.warn('Disconnected from RTCStats server');
+    }
+);
+```
+
+### Send Custom RTCStats Data
+
+```javascript
+// Send custom stats entry
+JitsiMeetJS.analytics.sendEvent('custom_event', {
+    category: 'ui',
+    action: 'button_click',
+    label: 'mute_audio',
+    value: 1
+});
+```
+
+## Analytics Events
+
+### Send Analytics Events
+
+```javascript
+// Send analytics event
+JitsiMeetJS.analytics.sendEvent('conference.joined', {
+    roomName: 'room-123',
+    participants: 5,
+    isAudioMuted: false,
+    isVideoMuted: false
+});
+
+// Common events
+JitsiMeetJS.analytics.sendEvent('track.added', {
+    mediaType: 'video',
+    videoType: 'camera'
+});
+
+JitsiMeetJS.analytics.sendEvent('connection.quality', {
+    quality: 'good',
+    score: 85
+});
+```
+
+### Add Permanent Properties
+
+```javascript
+// Add properties to all events
+JitsiMeetJS.analytics.addPermanentProperties({
+    appVersion: '1.0.0',
+    platform: 'web',
+    deploymentRegion: 'us-west',
+    userId: 'user-123'
+});
+```
+
+### Built-in Analytics Events
+
+lib-jitsi-meet automatically sends these events:
+
+```javascript
+// Connection events
+'conference.joined'
+'conference.left'
+'connection.established'
+'connection.failed'
+'connection.disconnected'
+
+// Media events
+'track.added'
+'track.removed'
+'track.muted'
+'track.unmuted'
+
+// Quality events
+'encode.time.stats'
+'quality.limitation'
+'bandwidth.allocation'
+
+// P2P events
+'p2p.established'
+'p2p.failed'
+'p2p.switched'
+```
+
+## Performance Monitoring
+
+### Monitor Encode Performance
+
+```javascript
+// Track video encoding performance
+conference.on(
+    JitsiMeetJS.events.conference.ENCODE_TIME_STATS_RECEIVED,
+    (tpc, stats) => {
+        // stats is a Map of SSRC -> encode stats
+        stats.forEach((stat, ssrc) => {
+            console.log('Encode stats:', {
+                ssrc,
+                codec: stat.codec,
+                resolution: stat.resolution,
+                encodeTime: stat.encodeTime,
+                qualityLimitationReason: stat.qualityLimitationReason,
+                timestamp: stat.timestamp
+            });
+            
+            // Warn if CPU limited
+            if (stat.qualityLimitationReason === 'cpu') {
+                console.warn('Video quality limited by CPU');
+            }
+        });
+    }
+);
+```
+
+### Track Connection Times
+
+```javascript
+// Get connection timing information
+const connectionTimes = connection.getConnectionTimes();
+
+console.log('Connection times:', {
+    connecting: connectionTimes.connecting,
+    connected: connectionTimes.connected,
+    duration: connectionTimes.connected - connectionTimes.connecting
+});
+
+const conferenceTimes = conference.getConnectionTimes();
+
+console.log('Conference times:', {
+    'muc.joined': conferenceTimes['muc.joined'],
+    'session.initiate': conferenceTimes['session.initiate'],
+    'ice.state.connected': conferenceTimes['ice.state.connected']
+});
+```
+
+### Monitor Packet Loss
+
+```javascript
+// Track packet loss
+let packetLossHistory = [];
+
+conference.on(
+    JitsiMeetJS.events.conference.CONNECTION_STATS,
+    (stats) => {
+        const packetLoss = stats.packetLoss;
+        
+        packetLossHistory.push({
+            timestamp: Date.now(),
+            loss: packetLoss
+        });
+        
+        // Keep last 60 samples
+        if (packetLossHistory.length > 60) {
+            packetLossHistory.shift();
+        }
+        
+        // Calculate average
+        const avgLoss = packetLossHistory.reduce((sum, p) => sum + p.loss, 0) 
+            / packetLossHistory.length;
+        
+        if (avgLoss > 5) {
+            console.warn('High packet loss detected:', avgLoss.toFixed(2) + '%');
+        }
+    }
+);
+```
+
+## Local Statistics Collector
+
+### Audio Input Statistics
+
+```javascript
+// Local stats are automatically collected for audio tracks
+// Access via Statistics class
+
+const localStats = JitsiMeetJS.statistics.localStats;
+
+localStats.forEach(stat => {
+    console.log('Local stat:', {
+        stream: stat.stream,
+        interval: stat.interval
+    });
+});
+```
+
+### Custom Local Stats
+
+```javascript
+// Start collecting stats for a track
+JitsiMeetJS.statistics.startLocalStats(
+    localAudioTrack,
+    (audioLevel) => {
+        console.log('Audio level:', audioLevel);
+        
+        // Update visualizer
+        updateAudioVisualizer(audioLevel);
+    }
+);
+
+// Stop collecting stats
+JitsiMeetJS.statistics.stopLocalStats(localAudioTrack);
+```
+
+## Complete Statistics Dashboard
+
+```javascript
+class StatisticsMonitor {
+    constructor(conference) {
+        this.conference = conference;
+        this.stats = {
+            connection: {},
+            participants: new Map(),
+            speaker: {},
+            performance: {
+                cpu: [],
+                bandwidth: [],
+                packetLoss: []
+            }
+        };
+        
+        this.setupListeners();
+    }
+    
+    setupListeners() {
+        // Connection stats
+        this.conference.on(
+            JitsiMeetJS.events.conference.CONNECTION_STATS,
+            (stats) => this.onConnectionStats(stats)
+        );
+        
+        // Speaker stats
+        this.conference.on(
+            JitsiMeetJS.events.conference.SPEAKER_STATS_RECEIVED,
+            (stats) => this.onSpeakerStats(stats)
+        );
+        
+        // Encode stats
+        this.conference.on(
+            JitsiMeetJS.events.conference.ENCODE_TIME_STATS_RECEIVED,
+            (tpc, stats) => this.onEncodeStats(tpc, stats)
+        );
+        
+        // Audio levels
+        this.conference.on(
+            JitsiMeetJS.events.conference.TRACK_AUDIO_LEVEL_CHANGED,
+            (participantId, level) => this.onAudioLevel(participantId, level)
+        );
+    }
+    
+    onConnectionStats(stats) {
+        this.stats.connection = {
+            quality: stats.connectionQuality,
+            bitrate: stats.bitrate,
+            packetLoss: stats.packetLoss,
+            bandwidth: stats.bandwidth,
+            e2eRtt: stats.e2eRtt,
+            jvbRtt: stats.jvbRtt,
+            timestamp: Date.now()
+        };
+        
+        // Track packet loss history
+        this.stats.performance.packetLoss.push({
+            timestamp: Date.now(),
+            value: stats.packetLoss
+        });
+        
+        // Keep last 100 samples
+        if (this.stats.performance.packetLoss.length > 100) {
+            this.stats.performance.packetLoss.shift();
+        }
+        
+        this.updateDashboard();
+    }
+    
+    onSpeakerStats(stats) {
+        this.stats.speaker = stats;
+        this.updateSpeakerDisplay();
+    }
+    
+    onEncodeStats(tpc, stats) {
+        stats.forEach((stat, ssrc) => {
+            // Track CPU limitation
+            if (stat.qualityLimitationReason === 'cpu') {
+                this.stats.performance.cpu.push({
+                    timestamp: Date.now(),
+                    encodeTime: stat.encodeTime,
+                    resolution: stat.resolution
+                });
+            }
+        });
+        
+        this.updatePerformanceDisplay();
+    }
+    
+    onAudioLevel(participantId, level) {
+        if (!this.stats.participants.has(participantId)) {
+            this.stats.participants.set(participantId, {});
+        }
+        
+        const participantStats = this.stats.participants.get(participantId);
+        participantStats.audioLevel = level;
+        participantStats.lastAudioTime = Date.now();
+        
+        this.updateParticipantDisplay(participantId);
+    }
+    
+    getConnectionQuality() {
+        return this.stats.connection.quality || 0;
+    }
+    
+    getAveragePacketLoss() {
+        const samples = this.stats.performance.packetLoss;
+        if (samples.length === 0) return 0;
+        
+        const sum = samples.reduce((acc, s) => acc + s.value, 0);
+        return sum / samples.length;
+    }
+    
+    getTopSpeakers(count = 3) {
+        const speakers = Object.entries(this.stats.speaker)
+            .map(([id, stats]) => ({
+                id,
+                name: stats.displayName,
+                time: stats.totalDominantSpeakerTime
+            }))
+            .sort((a, b) => b.time - a.time)
+            .slice(0, count);
+        
+        return speakers;
+    }
+    
+    getStatsSummary() {
+        return {
+            connection: {
+                quality: this.getConnectionQuality(),
+                packetLoss: this.getAveragePacketLoss(),
+                bitrate: this.stats.connection.bitrate,
+                rtt: this.stats.connection.e2eRtt
+            },
+            participants: {
+                total: this.stats.participants.size,
+                speaking: Array.from(this.stats.participants.values())
+                    .filter(p => p.audioLevel > 0.1).length
+            },
+            topSpeakers: this.getTopSpeakers()
+        };
+    }
+    
+    updateDashboard() {
+        const summary = this.getStatsSummary();
+        console.log('Stats summary:', summary);
+        // Update UI elements
+    }
+    
+    updateSpeakerDisplay() {
+        // Update speaker stats UI
+    }
+    
+    updatePerformanceDisplay() {
+        // Update performance charts
+    }
+    
+    updateParticipantDisplay(participantId) {
+        // Update participant stats UI
+    }
+}
+
+// Usage
+const statsMonitor = new StatisticsMonitor(conference);
+
+// Get summary
+const summary = statsMonitor.getStatsSummary();
+console.log('Current stats:', summary);
+
+// Get top speakers
+const topSpeakers = statsMonitor.getTopSpeakers(5);
+console.log('Top speakers:', topSpeakers);
+```
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Configure appropriate intervals">
+Balance between data granularity and performance:
+
+```javascript
+// Audio levels: 200ms (5 samples/second)
+audioLevelsInterval: 200
+
+// Peer connection stats: 10s
+pcStatsInterval: 10000
+
+// RTCStats: 10s
+rtcstatsPollInterval: 10000
+```
+</Accordion>
+
+<Accordion title="Monitor connection quality">
+Track quality metrics and react to poor conditions:
+
+```javascript
+if (stats.connectionQuality < 30) {
+    // Reduce quality
+    conference.setLastN(3);
+    conference.setSenderVideoConstraint(360);
+}
+```
+</Accordion>
+
+<Accordion title="Send meaningful analytics">
+Include context in analytics events:
+
+```javascript
+JitsiMeetJS.analytics.sendEvent('feature.used', {
+    feature: 'screen-sharing',
+    duration: screenShareDuration,
+    participants: participantCount
+});
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Audio/Video Quality" icon="signal" href="/guides/audio-video-quality">
+    Control media quality settings
+  </Card>
+  <Card title="Creating Connections" icon="link" href="/guides/creating-connections">
+    Learn about connection management
+  </Card>
+</CardGroup>

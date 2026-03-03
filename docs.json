@@ -1,122 +1,120 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "lib-jitsi-meet",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1D76BA",
+    "light": "#3FA9F5",
+    "dark": "#0E5A8A"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/jitsi/lib-jitsi-meet"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/jitsi/lib-jitsi-meet"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/architecture",
+              "concepts/connections",
+              "concepts/conferences",
+              "concepts/tracks",
+              "concepts/participants"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "guides/creating-connections",
+              "guides/managing-conferences",
+              "guides/handling-media-tracks",
+              "guides/screen-sharing",
+              "guides/audio-video-quality",
+              "guides/end-to-end-encryption",
+              "guides/recording",
+              "guides/statistics-analytics"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Advanced",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "advanced/webrtc-internals",
+              "advanced/xmpp-signaling",
+              "advanced/codec-selection",
+              "advanced/network-optimization",
+              "advanced/browser-compatibility"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core API",
             "pages": [
-              "api-reference/introduction"
+              "api/jitsi-meet-js",
+              "api/jitsi-connection",
+              "api/jitsi-conference",
+              "api/jitsi-participant"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Media Tracks",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/jitsi-track",
+              "api/jitsi-local-track",
+              "api/jitsi-remote-track",
+              "api/media-devices"
+            ]
+          },
+          {
+            "group": "Events",
+            "pages": [
+              "api/events/connection-events",
+              "api/events/conference-events",
+              "api/events/track-events",
+              "api/events/media-device-events"
+            ]
+          },
+          {
+            "group": "Errors",
+            "pages": [
+              "api/errors/connection-errors",
+              "api/errors/conference-errors",
+              "api/errors/track-errors"
+            ]
+          },
+          {
+            "group": "Advanced APIs",
+            "pages": [
+              "api/rtc-stats",
+              "api/audio-mixer",
+              "api/vad-emitter",
+              "api/proxy-connection"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

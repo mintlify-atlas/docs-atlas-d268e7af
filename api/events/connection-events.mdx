@@ -1,0 +1,153 @@
+---
+title: "Connection Events"
+description: "Events fired by JitsiConnection for connection lifecycle and status changes"
+---
+
+# JitsiConnectionEvents
+
+Events related to the XMPP connection lifecycle, authentication, and connection properties.
+
+## CONNECTION_ESTABLISHED
+
+**Event:** `connection.connectionEstablished`
+
+Fires when the connection to the XMPP server has been successfully established.
+
+<ResponseField name="id" type="string">
+  The ID of the local endpoint/participant/peer within the context of the established connection
+</ResponseField>
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+  (id) => {
+    console.log('Connected with ID:', id);
+  }
+);
+```
+
+---
+
+## CONNECTION_FAILED
+
+**Event:** `connection.connectionFailed`
+
+Fires when the connection attempt has failed.
+
+<ResponseField name="errType" type="JitsiConnectionErrors">
+  The type of error associated with the failure
+</ResponseField>
+
+<ResponseField name="errReason" type="string">
+  The error message associated with the failure
+</ResponseField>
+
+<ResponseField name="credentials" type="object">
+  The credentials used to connect (if any)
+</ResponseField>
+
+<ResponseField name="errReasonDetails" type="object">
+  Optional object with details about the error, like shard moving or suspending. Used for analytics purposes.
+</ResponseField>
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_FAILED,
+  (errType, errReason, credentials, errReasonDetails) => {
+    console.error('Connection failed:', errType, errReason);
+  }
+);
+```
+
+---
+
+## CONNECTION_DISCONNECTED
+
+**Event:** `connection.connectionDisconnected`
+
+Fires when the connection has been disconnected.
+
+<ResponseField name="msg" type="string">
+  A message associated with the disconnect, such as the last known error message
+</ResponseField>
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_DISCONNECTED,
+  (msg) => {
+    console.log('Disconnected:', msg);
+  }
+);
+```
+
+---
+
+## CONNECTION_REDIRECTED
+
+**Event:** `connection.redirected`
+
+Fires when the connection is redirected to a visitor node.
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_REDIRECTED,
+  () => {
+    console.log('Connection redirected to visitor node');
+  }
+);
+```
+
+---
+
+## CONNECTION_TOKEN_EXPIRED
+
+**Event:** `connection.token_expired`
+
+Fires when the connection is trying to resume but the authentication token has expired.
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_TOKEN_EXPIRED,
+  () => {
+    console.log('Token expired, need to re-authenticate');
+  }
+);
+```
+
+---
+
+## DISPLAY_NAME_REQUIRED
+
+**Event:** `connection.display_name_required`
+
+Fires when the display name is required over this connection and must be supplied when joining the room. This occurs in cases like lobby rooms where display name is mandatory.
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.DISPLAY_NAME_REQUIRED,
+  () => {
+    console.log('Display name is required to join');
+  }
+);
+```
+
+---
+
+## PROPERTIES_UPDATED
+
+**Event:** `connection.propertiesUpdated`
+
+Fires when the connection properties have been updated.
+
+<ResponseField name="properties" type="object">
+  All available connection properties (e.g., shard, region)
+</ResponseField>
+
+```javascript
+connection.addEventListener(
+  JitsiMeetJS.events.connection.PROPERTIES_UPDATED,
+  (properties) => {
+    console.log('Connection properties:', properties);
+  }
+);
+```

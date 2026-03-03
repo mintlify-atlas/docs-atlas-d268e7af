@@ -1,0 +1,500 @@
+---
+title: ProxyConnectionService
+description: Peer-to-peer proxy connection service for screen sharing and media forwarding
+---
+
+## Overview
+
+ProxyConnectionService manages peer-to-peer WebRTC connections for proxying media streams between participants. It's designed primarily for screen sharing scenarios where one participant forwards their screen to another peer through a direct P2P connection, bypassing the main conference infrastructure.
+
+## Key Features
+
+- Direct P2P connections using WebRTC
+- Jingle-based signaling via XMPP IQ stanzas
+- Automatic TURN credentials fetching
+- Converts remote streams to JitsiLocalTrack for local usage
+- Single active connection management (only one peer at a time)
+
+## Constructor
+
+```typescript
+new ProxyConnectionService(options: ProxyConnectionOptions)
+```
+
+<ParamField path="options" type="object" required>
+  Configuration options for the proxy connection service
+</ParamField>
+
+<ParamField path="options.jitsiConnection" type="JitsiConnection">
+  JitsiConnection instance used to fetch TURN credentials for the P2P connection
+</ParamField>
+
+<ParamField path="options.pcConfig" type="RTCConfiguration">
+  RTCConfiguration for the WebRTC peer connection. If not provided and jitsiConnection is available, P2P ICE config will be used automatically.
+</ParamField>
+
+<ParamField path="options.convertVideoToDesktop" type="boolean" default="false">
+  Whether to convert received video to a desktop (screen share) stream type
+</ParamField>
+
+<ParamField path="options.onRemoteStream" type="function" required>
+  Callback invoked when a remote stream is received. The stream is converted to a JitsiLocalTrack and passed to this callback.
+  
+  Signature: `(jitsiLocalTrack: JitsiLocalTrack) => void`
+</ParamField>
+
+<ParamField path="options.onSendMessage" type="function" required>
+  Callback invoked when a signaling message needs to be sent to the peer.
+  
+  Signature: `(peerJid: string, message: { iq: string }) => void`
+</ParamField>
+
+<ParamField path="options.onConnectionClosed" type="function">
+  Callback invoked when the proxy connection is closed
+  
+  Signature: `() => void`
+</ParamField>
+
+**Example:**
+
+```javascript
+import ProxyConnectionService from '@jitsi/lib-jitsi-meet/modules/proxyconnection/ProxyConnectionService';
+
+const proxyService = new ProxyConnectionService({
+  jitsiConnection: connection,
+  convertVideoToDesktop: true,
+  
+  onRemoteStream: (track) => {
+    console.log('Received proxied track:', track.getType());
+    // Use the track (e.g., add to conference)
+    conference.addTrack(track);
+  },
+  
+  onSendMessage: (peerJid, message) => {
+    // Send signaling message via XMPP
+    connection.xmpp.connection.send(message.iq);
+  },
+  
+  onConnectionClosed: () => {
+    console.log('Proxy connection closed');
+  }
+});
+```
+
+## Methods
+
+### start
+
+Initiates a new proxy peer connection as the initiator and sends local tracks to the peer.
+
+```typescript
+start(peerJid: string, localTracks?: JitsiLocalTrack[]): void
+```
+
+<ParamField path="peerJid" type="string" required>
+  The full JID of the remote peer to connect to
+</ParamField>
+
+<ParamField path="localTracks" type="JitsiLocalTrack[]" default="[]">
+  Array of local media tracks to send to the peer (typically screen share tracks)
+</ParamField>
+
+This method:
+1. Creates a new ProxyConnectionPC instance as initiator
+2. Sets source names for all local tracks
+3. Initiates the WebRTC negotiation
+4. Sends tracks through the peer connection
+
+**Example:**
+
+```javascript
+import JitsiMeetJS from '@jitsi/lib-jitsi-meet';
+
+// Get screen share track
+const screenTracks = await JitsiMeetJS.createLocalTracks({
+  devices: ['desktop']
+});
+
+// Start proxy connection to forward screen share
+const peerJid = 'participant@conference.example.com/resource';
+proxyService.start(peerJid, screenTracks);
+
+console.log(`Started proxy connection to ${peerJid}`);
+```
+
+### processMessage
+
+Processes incoming signaling messages from the peer to establish or update the proxy connection.
+
+```typescript
+processMessage(message: ProxyMessage): void
+```
+
+<ParamField path="message" type="object" required>
+  Signaling message received from the peer
+</ParamField>
+
+<ParamField path="message.from" type="string" required>
+  The sender's full JID
+</ParamField>
+
+<ParamField path="message.data" type="object" required>
+  Message data containing the IQ
+</ParamField>
+
+<ParamField path="message.data.iq" type="string" required>
+  Stringified Jingle IQ stanza for connection negotiation
+</ParamField>
+
+**Jingle Actions Handled:**
+- `session-initiate` - Creates a new peer connection (as answerer)
+- `session-accept` - Accepts the connection offer
+- `transport-info` - Exchanges ICE candidates
+- `session-terminate` - Terminates the connection
+- `connection-error` - Handles connection errors
+- `unavailable` - Peer unavailable
+
+**Example:**
+
+```javascript
+// Handle incoming XMPP messages
+connection.xmpp.connection.addHandler((iq) => {
+  const from = iq.getAttribute('from');
+  const jingleElement = iq.querySelector('jingle');
+  
+  if (jingleElement) {
+    const iqString = new XMLSerializer().serializeToString(iq);
+    
+    proxyService.processMessage({
+      from: from,
+      data: { iq: iqString }
+    });
+  }
+  
+  return true; // Keep handler active
+}, null, 'iq', 'set');
+```
+
+<Info>
+  If a proxy connection is already active with a different peer, incoming messages from other peers are automatically rejected with a `connection-error` action.
+</Info>
+
+### stop
+
+Terminates the active proxy peer connection and cleans up resources.
+
+```typescript
+stop(): void
+```
+
+**Example:**
+
+```javascript
+// Stop screen sharing proxy
+proxyService.stop();
+console.log('Proxy connection stopped');
+```
+
+## Complete Examples
+
+### Screen Share Proxy (Sender)
+
+```javascript
+import JitsiMeetJS from '@jitsi/lib-jitsi-meet';
+import ProxyConnectionService from '@jitsi/lib-jitsi-meet/modules/proxyconnection/ProxyConnectionService';
+
+class ScreenShareProxy {
+  constructor(connection) {
+    this.connection = connection;
+    this.proxyService = null;
+    this.screenTracks = [];
+  }
+
+  async shareScreenToPeer(peerJid) {
+    // Create proxy service
+    this.proxyService = new ProxyConnectionService({
+      jitsiConnection: this.connection,
+      
+      onSendMessage: (jid, message) => {
+        // Send via custom XMPP message
+        const iq = this.connection.xmpp.connection.createIQ({
+          to: jid,
+          type: 'set'
+        });
+        iq.c('proxy', { xmlns: 'jitsi:proxy' })
+          .c('data')
+          .t(message.iq);
+        
+        this.connection.xmpp.connection.send(iq);
+      },
+      
+      onConnectionClosed: () => {
+        console.log('Screen share proxy closed');
+        this.cleanup();
+      }
+    });
+
+    // Get screen share
+    this.screenTracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['desktop'],
+      desktopSharingSourceDevice: 'screen'
+    });
+
+    // Start proxying
+    this.proxyService.start(peerJid, this.screenTracks);
+    
+    console.log(`Sharing screen to ${peerJid}`);
+  }
+
+  stopSharing() {
+    if (this.proxyService) {
+      this.proxyService.stop();
+      this.cleanup();
+    }
+  }
+
+  cleanup() {
+    this.screenTracks.forEach(track => track.dispose());
+    this.screenTracks = [];
+    this.proxyService = null;
+  }
+}
+
+// Usage
+const screenProxy = new ScreenShareProxy(connection);
+await screenProxy.shareScreenToPeer('receiver@conference.example.com/abc123');
+
+// Later...
+screenProxy.stopSharing();
+```
+
+### Screen Share Proxy (Receiver)
+
+```javascript
+import ProxyConnectionService from '@jitsi/lib-jitsi-meet/modules/proxyconnection/ProxyConnectionService';
+
+class ScreenShareReceiver {
+  constructor(connection, conference) {
+    this.connection = connection;
+    this.conference = conference;
+    this.proxyService = null;
+    this.receivedTrack = null;
+  }
+
+  setupReceiver() {
+    // Create proxy service (receiver mode)
+    this.proxyService = new ProxyConnectionService({
+      jitsiConnection: this.connection,
+      convertVideoToDesktop: true, // Treat as desktop stream
+      
+      onRemoteStream: (track) => {
+        console.log('Received proxied screen share');
+        this.receivedTrack = track;
+        
+        // Display the screen share
+        const videoElement = document.getElementById('screen-share-video');
+        track.attach(videoElement);
+        
+        // Or add to conference
+        // this.conference.addTrack(track);
+      },
+      
+      onSendMessage: (jid, message) => {
+        // Send response via XMPP
+        const iq = this.connection.xmpp.connection.createIQ({
+          to: jid,
+          type: 'set'
+        });
+        iq.c('proxy', { xmlns: 'jitsi:proxy' })
+          .c('data')
+          .t(message.iq);
+        
+        this.connection.xmpp.connection.send(iq);
+      },
+      
+      onConnectionClosed: () => {
+        console.log('Screen share ended');
+        this.cleanup();
+      }
+    });
+
+    // Listen for incoming proxy messages
+    this.connection.xmpp.connection.addHandler(
+      (iq) => this.handleProxyMessage(iq),
+      'jitsi:proxy',
+      'iq',
+      'set'
+    );
+  }
+
+  handleProxyMessage(iq) {
+    const from = iq.getAttribute('from');
+    const dataElement = iq.querySelector('data');
+    
+    if (dataElement) {
+      const iqData = dataElement.textContent;
+      
+      this.proxyService.processMessage({
+        from: from,
+        data: { iq: iqData }
+      });
+    }
+    
+    return true;
+  }
+
+  cleanup() {
+    if (this.receivedTrack) {
+      this.receivedTrack.dispose();
+      this.receivedTrack = null;
+    }
+  }
+
+  stop() {
+    if (this.proxyService) {
+      this.proxyService.stop();
+    }
+    this.cleanup();
+  }
+}
+
+// Usage
+const receiver = new ScreenShareReceiver(connection, conference);
+receiver.setupReceiver();
+// Now ready to receive proxied screen shares
+```
+
+### Bidirectional Audio/Video Proxy
+
+```javascript
+import ProxyConnectionService from '@jitsi/lib-jitsi-meet/modules/proxyconnection/ProxyConnectionService';
+import JitsiMeetJS from '@jitsi/lib-jitsi-meet';
+
+class BidirectionalProxy {
+  constructor(connection) {
+    this.connection = connection;
+    this.proxyService = null;
+    this.localTracks = [];
+    this.remoteTracks = [];
+  }
+
+  async startCall(peerJid) {
+    // Get local audio/video
+    this.localTracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['audio', 'video']
+    });
+
+    // Setup proxy service
+    this.proxyService = new ProxyConnectionService({
+      jitsiConnection: this.connection,
+      convertVideoToDesktop: false, // Regular video
+      
+      onRemoteStream: (track) => {
+        console.log(`Received ${track.getType()} track from peer`);
+        this.remoteTracks.push(track);
+        
+        // Attach to DOM
+        const container = track.isVideoTrack() 
+          ? '#remote-video' 
+          : '#remote-audio';
+        track.attach(document.querySelector(container));
+      },
+      
+      onSendMessage: (jid, message) => {
+        this.sendSignalingMessage(jid, message);
+      },
+      
+      onConnectionClosed: () => {
+        console.log('Call ended');
+        this.endCall();
+      }
+    });
+
+    // Attach local tracks to UI
+    this.localTracks.forEach(track => {
+      if (track.isVideoTrack()) {
+        track.attach(document.querySelector('#local-video'));
+      }
+    });
+
+    // Start P2P connection
+    this.proxyService.start(peerJid, this.localTracks);
+  }
+
+  sendSignalingMessage(jid, message) {
+    // Implementation depends on your signaling method
+    this.connection.xmpp.connection.send(/* formatted message */);
+  }
+
+  handleIncomingMessage(message) {
+    if (this.proxyService) {
+      this.proxyService.processMessage(message);
+    }
+  }
+
+  endCall() {
+    if (this.proxyService) {
+      this.proxyService.stop();
+    }
+    
+    this.localTracks.forEach(track => track.dispose());
+    this.remoteTracks.forEach(track => track.dispose());
+    this.localTracks = [];
+    this.remoteTracks = [];
+  }
+}
+```
+
+## Important Notes
+
+<Warning>
+  ProxyConnectionService manages only **one active peer connection** at a time. If a connection exists and a message arrives from a different peer, it will be automatically rejected.
+</Warning>
+
+<Info>
+  The service uses Jingle protocol over XMPP IQ stanzas for signaling. Ensure your XMPP server and message handlers support custom IQ namespaces.
+</Info>
+
+<Note>
+  Remote streams are converted to JitsiLocalTrack instances with a special `deviceId` format: `proxy:{peerJid}` and `sourceType: 'proxy'`
+</Note>
+
+## Connection Lifecycle
+
+1. **Initiator** calls `start(peerJid, tracks)` → Sends `session-initiate`
+2. **Receiver** processes message → Creates connection → Sends `session-accept`
+3. Both peers exchange ICE candidates via `transport-info`
+4. Connection established → Media flows
+5. Either peer can send `session-terminate` to close
+6. `onConnectionClosed` callback triggered on both sides
+
+## Error Handling
+
+The service handles several error scenarios:
+
+- **Rejected connections** - Messages from unexpected peers are rejected with `connection-error`
+- **Missing peer JID** - Throws error if `start()` called without peer JID
+- **Connection errors** - Automatically closes and cleans up
+- **Malformed XML** - Logs error and returns null for invalid IQ messages
+
+```javascript
+proxyService.on('error', (error) => {
+  console.error('Proxy connection error:', error);
+  // Handle error (e.g., retry, notify user)
+});
+```
+
+## Performance Considerations
+
+- Uses P2P connection, bypassing media server (lower latency, reduced server load)
+- Requires TURN servers for connections behind restrictive NATs
+- ICE configuration automatically fetched from JitsiConnection
+- Single connection limit prevents resource exhaustion
+
+## Browser Support
+
+Requires WebRTC support:
+- Chrome/Edge 56+
+- Firefox 44+
+- Safari 11+
+- Opera 43+

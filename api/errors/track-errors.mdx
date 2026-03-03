@@ -1,0 +1,529 @@
+---
+title: JitsiTrackErrors
+description: Media track error constants and handling for lib-jitsi-meet
+---
+
+Track errors that can occur when requesting, managing, or using audio/video media tracks.
+
+## Error Constants
+
+### CONSTRAINT_FAILED
+
+**Value:** `gum.constraint_failed`
+
+**Cause:** Some requested constraints in getUserMedia call were not satisfied.
+
+**When it occurs:**
+- Requested resolution not supported by camera
+- Frame rate constraints cannot be met
+- Audio constraints incompatible with device
+- Requested facing mode not available
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['video'],
+    resolution: 4320, // 8K - likely unsupported
+    constraints: {
+      video: { frameRate: 120 }
+    }
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.CONSTRAINT_FAILED) {
+    // Retry with lower constraints
+    console.warn('Requested constraints not supported. Trying defaults.');
+    const tracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['video']
+      // Use default constraints
+    });
+  }
+}
+```
+
+---
+
+### ELECTRON_DESKTOP_PICKER_ERROR
+
+**Value:** `gum.electron_desktop_picker_error`
+
+**Cause:** Generic error selecting a DesktopCapturerSource in Electron app.
+
+**When it occurs:**
+- Electron desktop picker encounters an error
+- Screen selection process fails
+- Desktop capturer API issues
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['desktop']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.ELECTRON_DESKTOP_PICKER_ERROR) {
+    console.error('Desktop picker error in Electron.');
+    showNotification('Failed to access screen sharing. Please try again.');
+  }
+}
+```
+
+---
+
+### ELECTRON_DESKTOP_PICKER_NOT_FOUND
+
+**Value:** `gum.electron_desktop_picker_not_found`
+
+**Cause:** Custom desktop picker could not be detected for the Electron app.
+
+**When it occurs:**
+- Desktop picker not properly configured in Electron
+- Missing Electron desktop capturer integration
+- Custom picker implementation not found
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['desktop']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.ELECTRON_DESKTOP_PICKER_NOT_FOUND) {
+    console.error('Desktop picker not configured in Electron app.');
+    // Fall back to extension-based screen sharing if available
+    fallbackToExtensionScreenSharing();
+  }
+}
+```
+
+---
+
+### GENERAL
+
+**Value:** `gum.general`
+
+**Cause:** Generic getUserMedia error.
+
+**When it occurs:**
+- Unspecified media device errors
+- Browser API failures
+- Unexpected getUserMedia rejections
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.GENERAL) {
+    console.error('General media error:', error.message);
+    // Provide user-friendly error message
+    showNotification('Unable to access camera/microphone. Please check device settings.');
+  }
+}
+```
+
+---
+
+### NOT_FOUND
+
+**Value:** `gum.not_found`
+
+**Cause:** Requested device was not found.
+
+**When it occurs:**
+- No camera available on device
+- No microphone connected
+- Specific device ID not found
+- Device disconnected during request
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video'],
+    cameraDeviceId: 'specific-device-id'
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.NOT_FOUND) {
+    console.warn('Requested device not found.');
+    // Retry without specific device ID to use default
+    const tracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['audio', 'video']
+    });
+  }
+}
+```
+
+---
+
+### PERMISSION_DENIED
+
+**Value:** `gum.permission_denied`
+
+**Cause:** User denied permission to access the requested device.
+
+**When it occurs:**
+- User clicks "Block" on permission prompt
+- Browser settings block media access
+- System permissions deny access
+- Site permissions previously denied
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.PERMISSION_DENIED) {
+    console.warn('User denied media permissions.');
+    // Show instructions for granting permissions
+    showPermissionInstructions();
+    // Optionally allow joining without media
+    proceedWithoutMedia();
+  }
+}
+```
+
+---
+
+### SCREENSHARING_GENERIC_ERROR
+
+**Value:** `gum.screensharing_generic_error`
+
+**Cause:** Generic error for screen sharing failure.
+
+**When it occurs:**
+- Screen sharing API failures
+- Display capture errors
+- Browser compatibility issues
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['desktop']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.SCREENSHARING_GENERIC_ERROR) {
+    console.error('Screen sharing failed.');
+    showNotification('Unable to share screen. Please try again.');
+  }
+}
+```
+
+---
+
+### SCREENSHARING_NOT_SUPPORTED_ERROR
+
+**Value:** `gdm.screen_sharing_not_supported`
+
+**Cause:** getDisplayMedia is not supported or available.
+
+**When it occurs:**
+- Browser doesn't support getDisplayMedia API
+- Electron app without permission handler
+- Insecure context (non-HTTPS)
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['desktop']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.SCREENSHARING_NOT_SUPPORTED_ERROR) {
+    console.error('Screen sharing not supported in this environment.');
+    showNotification('Screen sharing is not available in your browser.');
+    // Suggest browser upgrade or extension installation
+  }
+}
+```
+
+---
+
+### SCREENSHARING_USER_CANCELED
+
+**Value:** `gum.screensharing_user_canceled`
+
+**Cause:** User canceled screen sharing window selection dialog.
+
+**When it occurs:**
+- User clicks "Cancel" on screen picker
+- User closes screen selection dialog
+- User dismisses without selecting a source
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['desktop']
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.SCREENSHARING_USER_CANCELED) {
+    console.info('User canceled screen sharing.');
+    // No error notification needed - user intentionally canceled
+    // Just proceed without screen sharing
+  }
+}
+```
+
+---
+
+### TIMEOUT
+
+**Value:** `gum.timeout`
+
+**Cause:** Timeout passed to obtainAudioAndVideoPermissions expired without getUserMedia resolving.
+
+**When it occurs:**
+- getUserMedia takes too long to respond
+- Permission prompt left open too long
+- Device initialization hangs
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video'],
+    timeout: 30000 // 30 seconds
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.TIMEOUT) {
+    console.error('Media request timed out.');
+    showNotification('Camera/microphone request timed out. Please try again.');
+    // Retry with longer timeout or different devices
+  }
+}
+```
+
+---
+
+### TRACK_IS_DISPOSED
+
+**Value:** `track.track_is_disposed`
+
+**Cause:** Track has been disposed and cannot be used anymore.
+
+**When it occurs:**
+- Attempting to use track after calling dispose()
+- Operating on cleaned-up track
+- Using track after it's been removed from conference
+
+**Handling recommendations:**
+```javascript
+const localTrack = tracks[0];
+localTrack.dispose();
+
+try {
+  room.addTrack(localTrack);
+} catch (error) {
+  if (error.name === JitsiTrackErrors.TRACK_IS_DISPOSED) {
+    console.error('Cannot use disposed track.');
+    // Create a new track instead
+    const newTracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['video']
+    });
+    room.addTrack(newTracks[0]);
+  }
+}
+```
+
+---
+
+### TRACK_NO_STREAM_FOUND
+
+**Value:** `track.no_stream_found`
+
+**Cause:** Track has no MediaStream associated.
+
+**When it occurs:**
+- MediaStream was not properly initialized
+- Stream was detached or lost
+- Track creation incomplete
+
+**Handling recommendations:**
+```javascript
+try {
+  // This should not normally occur with standard API usage
+  const stream = track.getOriginalStream();
+} catch (error) {
+  if (error.name === JitsiTrackErrors.TRACK_NO_STREAM_FOUND) {
+    console.error('Track missing MediaStream.');
+    // Recreate the track
+    track.dispose();
+    const newTracks = await JitsiMeetJS.createLocalTracks({
+      devices: [track.getType()]
+    });
+  }
+}
+```
+
+---
+
+### TRACK_NO_STREAM_TRACKS_FOUND
+
+**Value:** `track.no_stream_tracks_found`
+
+**Cause:** No tracks were found in the media stream.
+
+**When it occurs:**
+- MediaStream has no audio or video tracks
+- Tracks were removed from stream
+- Empty MediaStream provided
+
+**Handling recommendations:**
+```javascript
+try {
+  // Creating track from MediaStream with no tracks
+  const track = new JitsiLocalTrack({
+    stream: emptyMediaStream,
+    // ...
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.TRACK_NO_STREAM_TRACKS_FOUND) {
+    console.error('MediaStream contains no tracks.');
+    // Create tracks using createLocalTracks instead
+  }
+}
+```
+
+---
+
+### TRACK_TOO_MANY_TRACKS_IN_STREAM
+
+**Value:** `track.too_many_tracks_in_stream`
+
+**Cause:** Too many tracks in the provided media stream.
+
+**When it occurs:**
+- MediaStream contains multiple audio/video tracks
+- Expected single track but got multiple
+- Stream aggregation errors
+
+**Handling recommendations:**
+```javascript
+try {
+  // MediaStream with multiple video tracks
+  const track = new JitsiLocalTrack({
+    stream: streamWithMultipleTracks,
+    // ...
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.TRACK_TOO_MANY_TRACKS_IN_STREAM) {
+    console.error('MediaStream has too many tracks.');
+    // Split stream into individual tracks
+    const videoTrack = stream.getVideoTracks()[0];
+    const singleTrackStream = new MediaStream([videoTrack]);
+  }
+}
+```
+
+---
+
+### UNSUPPORTED_RESOLUTION
+
+**Value:** `gum.unsupported_resolution`
+
+**Cause:** Requested video resolution is not supported by the webcam.
+
+**When it occurs:**
+- Resolution exceeds camera capabilities
+- Aspect ratio not supported
+- Camera doesn't support requested dimensions
+
+**Handling recommendations:**
+```javascript
+try {
+  const tracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['video'],
+    resolution: 2160 // 4K
+  });
+} catch (error) {
+  if (error.name === JitsiTrackErrors.UNSUPPORTED_RESOLUTION) {
+    console.warn('Requested resolution not supported.');
+    // Fall back to lower resolution
+    const tracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['video'],
+      resolution: 720 // HD
+    });
+  }
+}
+```
+
+## Usage Example
+
+```javascript
+import { JitsiTrackErrors } from 'lib-jitsi-meet';
+
+async function createTracks() {
+  try {
+    const tracks = await JitsiMeetJS.createLocalTracks({
+      devices: ['audio', 'video'],
+      resolution: 1080,
+      timeout: 30000
+    });
+    return tracks;
+  } catch (error) {
+    console.error('Track creation failed:', error);
+    
+    switch (error.name) {
+      case JitsiTrackErrors.PERMISSION_DENIED:
+        handlePermissionDenied();
+        break;
+      case JitsiTrackErrors.NOT_FOUND:
+        handleDeviceNotFound();
+        break;
+      case JitsiTrackErrors.CONSTRAINT_FAILED:
+      case JitsiTrackErrors.UNSUPPORTED_RESOLUTION:
+        // Retry with default constraints
+        return retryWithDefaults();
+      case JitsiTrackErrors.TIMEOUT:
+        handleTimeout();
+        break;
+      case JitsiTrackErrors.SCREENSHARING_USER_CANCELED:
+        // User canceled - no action needed
+        break;
+      default:
+        handleGenericError(error);
+    }
+    
+    throw error;
+  }
+}
+```
+
+## Error Categories
+
+### getUserMedia Errors (gum.*)
+Errors that occur when requesting media devices:
+- CONSTRAINT_FAILED
+- GENERAL
+- NOT_FOUND
+- PERMISSION_DENIED
+- TIMEOUT
+- UNSUPPORTED_RESOLUTION
+
+### Screen Sharing Errors
+Errors specific to screen/desktop sharing:
+- SCREENSHARING_GENERIC_ERROR
+- SCREENSHARING_NOT_SUPPORTED_ERROR
+- SCREENSHARING_USER_CANCELED
+- ELECTRON_DESKTOP_PICKER_ERROR
+- ELECTRON_DESKTOP_PICKER_NOT_FOUND
+
+### Track Management Errors (track.*)
+Errors related to track lifecycle and state:
+- TRACK_IS_DISPOSED
+- TRACK_NO_STREAM_FOUND
+- TRACK_NO_STREAM_TRACKS_FOUND
+- TRACK_TOO_MANY_TRACKS_IN_STREAM
+
+## See Also
+
+- [JitsiTrack API](/api/jitsi-track)
+- [Creating Local Tracks](/guides/handling-media-tracks)
+- [Conference Errors](/api/errors/conference-errors)
+- [Connection Errors](/api/errors/connection-errors)

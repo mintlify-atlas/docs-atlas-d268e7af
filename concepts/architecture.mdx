@@ -1,0 +1,191 @@
+---
+title: Architecture Overview
+description: Understanding lib-jitsi-meet's architecture and design patterns
+---
+
+lib-jitsi-meet is a JavaScript library that provides WebRTC functionality, XMPP communication, and media handling for Jitsi Meet clients. This page explains its core architecture and design principles.
+
+## Module Organization
+
+The library follows a modular design with clear separation of concerns:
+
+### Core API Layer
+
+The main public API is exposed through these core classes:
+
+- **JitsiMeetJS.ts** - Main library entry point exposing the public API
+- **JitsiConnection.ts** - XMPP connection management and authentication
+- **JitsiConference.js** - Video conference session representation
+- **JitsiParticipant.ts** - Conference participant abstraction
+- **JitsiTrack/JitsiLocalTrack/JitsiRemoteTrack** - Media track management
+
+### RTC Module (`/modules/RTC/`)
+
+Handles all WebRTC functionality:
+
+- **Core WebRTC features**: Track management and screen sharing
+- **TraceablePeerConnection.js** - Enhanced PeerConnection with debugging capabilities
+- **RTCUtils.js** - Browser compatibility and WebRTC utilities
+
+The RTC module provides a clean abstraction over browser WebRTC APIs with built-in compatibility handling.
+
+### XMPP Module (`/modules/xmpp/`)
+
+Implements XMPP/Jingle protocol for signaling:
+
+- **ChatRoom.js** - Multi-user chat room with presence management
+- **JingleSessionPC.js** - Jingle protocol for media negotiation
+- **SignalingLayerImpl.js** - Abstraction layer for signaling
+- **Strophe plugins** - Protocol extensions (disco, ping, stream-management, etc.)
+
+This module uses a custom Jitsi fork of `strophe.js` as the XMPP client library.
+
+### E2EE Module (`/modules/e2ee/`)
+
+Provides end-to-end encryption:
+
+- **End-to-end encryption** using insertable streams and SFrame
+- **Worker.js** - Web worker for E2EE processing (separate webpack entry)
+- **OlmAdapter.js** - Integration with Olm for key management
+
+### Quality Control Module (`/modules/qualitycontrol/`)
+
+Manages video quality and codec selection:
+
+- **Video quality adaptation** and codec selection
+- **ReceiveVideoController/SendVideoController** - Stream management
+
+### Service Layer (`/service/`)
+
+Provides type-safe constants and events:
+
+- Type-safe constants, events, and enums
+- Well-defined event system used throughout the library
+
+## Architecture Layers
+
+### Signaling vs Media Layers
+
+lib-jitsi-meet maintains a clean separation between two fundamental layers:
+
+**Signaling Layer (XMPP)**
+- Handles session establishment and negotiation
+- Manages participant presence and room membership
+- Coordinates media capabilities between peers
+- Uses XMPP with Jingle extensions
+- Supports both BOSH and WebSocket transports
+
+**Media Layer (WebRTC)**
+- Manages actual media streams (audio/video)
+- Handles peer-to-peer connections when applicable
+- Controls media quality and bandwidth
+- Processes media through the TraceablePeerConnection
+
+This separation allows the signaling layer to use XMPP while the media layer uses WebRTC, providing flexibility and maintainability.
+
+## Event-Driven Architecture
+
+The library extensively uses the EventEmitter pattern throughout all modules:
+
+```typescript
+// Example: JitsiConnection extends EventEmitter functionality
+class JitsiConnection {
+    addEventListener(event: JitsiConnectionEvents, listener: (...args: any[]) => void): void {
+        this.xmpp.addListener(event, listener);
+    }
+}
+```
+
+Key characteristics:
+
+- **Consistent event handling** across all components
+- **Typed events** defined in the `/service/` directory
+- **Event parameters** and timing documented in JSDoc comments
+- **State change notifications** for all significant operations
+
+### Common Event Patterns
+
+All major classes follow this pattern:
+
+1. **Connection Events**: `CONNECTION_ESTABLISHED`, `CONNECTION_FAILED`, `CONNECTION_DISCONNECTED`
+2. **Conference Events**: `CONFERENCE_JOINED`, `USER_JOINED`, `TRACK_ADDED`
+3. **Track Events**: `TRACK_MUTE_CHANGED`, `TRACK_AUDIO_LEVEL_CHANGED`
+4. **Media Events**: `REMOTE_TRACK_ADDED`, `LOCAL_TRACK_STOPPED`
+
+## Design Patterns
+
+### Protocol Abstraction
+
+Clean separation between XMPP signaling and WebRTC media:
+
+- **SignalingLayerImpl** provides an abstraction for signaling operations
+- **XMPP details** are hidden behind higher-level APIs
+- **WebRTC integration** uses TraceablePeerConnection for enhanced debugging
+
+### Modular Design
+
+- **Self-contained modules** with minimal cross-dependencies
+- **Clear interfaces** between components
+- **Consistent error handling** and reporting across modules
+
+### Browser Compatibility
+
+- **webrtc-adapter** integration for cross-browser support
+- **RTCUtils** abstraction for capability detection
+- **Feature detection** rather than browser detection where possible
+
+## Build Architecture
+
+The library supports dual output formats:
+
+- **UMD bundle** (`dist/umd/`) - For browser `<script>` tags
+- **ESM modules** (`dist/esm/`) - For modern module bundlers
+
+Key dependencies:
+
+```json
+{
+  "strophe.js": "XMPP client library (custom Jitsi fork)",
+  "webrtc-adapter": "WebRTC compatibility shim",
+  "sdp-transform": "SDP parsing and manipulation",
+  "@jitsi/logger": "Logging framework",
+  "@jitsi/js-utils": "Jitsi JavaScript utilities"
+}
+```
+
+<Note>
+The library is actively migrating from JavaScript to TypeScript. New features should be implemented only with TypeScript, using strict type checking and avoiding `any`, `unknown`, and `object` types.
+</Note>
+
+## Development Patterns
+
+### TypeScript Migration
+
+- 4-space indentation, LF line endings
+- TypeScript enums for constant groups
+- Interfaces for major components
+- Strict type checking enabled in `tsconfig.json`
+
+### Testing Strategy
+
+- Tests located alongside source files with `.spec.ts` extension
+- Karma + Jasmine testing framework
+- Tests for both success and error scenarios
+- Mocked external dependencies (XMPP connections, WebRTC APIs)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="JitsiConnection" icon="plug" href="/concepts/connections">
+    Learn about XMPP connection lifecycle and authentication
+  </Card>
+  <Card title="JitsiConference" icon="users" href="/concepts/conferences">
+    Understand conference sessions and room management
+  </Card>
+  <Card title="Media Tracks" icon="video" href="/concepts/tracks">
+    Explore local and remote media track handling
+  </Card>
+  <Card title="Participants" icon="user" href="/concepts/participants">
+    Work with participant properties and roles
+  </Card>
+</CardGroup>

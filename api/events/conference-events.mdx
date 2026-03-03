@@ -1,0 +1,776 @@
+---
+title: "Conference Events"
+description: "Events fired by JitsiConference for conference lifecycle, participants, and media"
+---
+
+# JitsiConferenceEvents
+
+Events related to conference lifecycle, participant management, media tracks, and conference features.
+
+## Conference Lifecycle
+
+### CONFERENCE_JOINED
+
+**Event:** `conference.joined`
+
+Fires when the local participant has successfully joined the conference.
+
+```javascript
+conference.on(JitsiMeetJS.events.conference.CONFERENCE_JOINED, () => {
+  console.log('Successfully joined conference');
+});
+```
+
+### CONFERENCE_JOIN_IN_PROGRESS
+
+**Event:** `conference.join_in_progress`
+
+Fires when the conference join process is in progress.
+
+### CONFERENCE_LEFT
+
+**Event:** `conference.left`
+
+Fires when the local participant has left the conference.
+
+### CONFERENCE_FAILED
+
+**Event:** `conference.failed`
+
+Fires when the conference has failed.
+
+### CONFERENCE_ERROR
+
+**Event:** `conference.error`
+
+Fires when a conference error has occurred.
+
+### CONFERENCE_UNIQUE_ID_SET
+
+**Event:** `conference.unique_id_set`
+
+Fires when the conference unique identifier has been set.
+
+### CONFERENCE_CREATED_TIMESTAMP
+
+**Event:** `conference.createdTimestamp`
+
+Fires with the UTC conference timestamp when the first participant joined.
+
+---
+
+## Connection Status
+
+### CONNECTION_ESTABLISHED
+
+**Event:** `conference.connectionEstablished`
+
+Fires when the connection to the conference has been established. Currently fired when the ICE connection enters 'connected' state for the first time.
+
+### CONNECTION_INTERRUPTED
+
+**Event:** `conference.connectionInterrupted`
+
+Fires when the connection to the conference has been interrupted. Currently fired when the ICE connection is interrupted.
+
+### CONNECTION_RESTORED
+
+**Event:** `conference.connectionRestored`
+
+Fires when the connection to the conference has been restored. Currently fired when the ICE connection is restored.
+
+---
+
+## Participants
+
+### USER_JOINED
+
+**Event:** `conference.userJoined`
+
+Fires when a new user has joined the conference.
+
+<ResponseField name="participant" type="JitsiParticipant">
+  The participant who joined
+</ResponseField>
+
+### USER_LEFT
+
+**Event:** `conference.userLeft`
+
+Fires when a user has left the conference.
+
+<ResponseField name="participant" type="JitsiParticipant">
+  The participant who left
+</ResponseField>
+
+### USER_ROLE_CHANGED
+
+**Event:** `conference.roleChanged`
+
+Fires when a user's role has changed.
+
+### USER_STATUS_CHANGED
+
+**Event:** `conference.statusChanged`
+
+Fires when a user's status has changed.
+
+### DISPLAY_NAME_CHANGED
+
+**Event:** `conference.displayNameChanged`
+
+Fires when a user has changed their display name.
+
+### PARTICIPANT_PROPERTY_CHANGED
+
+**Event:** `conference.participant_property_changed`
+
+Fires when a property of a specific participant has changed.
+
+### PARTCIPANT_FEATURES_CHANGED
+
+**Event:** `conference.partcipant_features_changed`
+
+Fires when the features of a participant have changed.
+
+<Note>
+  There is a spelling mistake in this event name ("PARTCIPANT" instead of "PARTICIPANT") that is maintained for backward compatibility.
+</Note>
+
+### PARTICIPANT_SOURCE_UPDATED
+
+**Event:** `conference.participant_source_updated`
+
+Fires when the state of sources attached to a remote participant has changed.
+
+### KICKED
+
+**Event:** `conference.kicked`
+
+Fires when the local participant has been kicked from the conference.
+
+<ResponseField name="participant" type="JitsiParticipant">
+  The participant who initiated the kick
+</ResponseField>
+
+### PARTICIPANT_KICKED
+
+**Event:** `conference.participant_kicked`
+
+Fires when a participant was kicked from the conference.
+
+<ResponseField name="kicker" type="JitsiParticipant">
+  The participant who initiated the kick
+</ResponseField>
+
+<ResponseField name="kicked" type="JitsiParticipant">
+  The participant who was kicked
+</ResponseField>
+
+---
+
+## Media Tracks
+
+### TRACK_ADDED
+
+**Event:** `conference.trackAdded`
+
+Fires when a new media track was added to the conference.
+
+<ResponseField name="track" type="JitsiTrack">
+  The added JitsiTrack (local or remote)
+</ResponseField>
+
+```javascript
+conference.on(JitsiMeetJS.events.conference.TRACK_ADDED, (track) => {
+  console.log('Track added:', track.getType());
+  if (!track.isLocal()) {
+    // Remote track - attach to DOM
+    track.attach(document.getElementById('video'));
+  }
+});
+```
+
+### TRACK_REMOVED
+
+**Event:** `conference.trackRemoved`
+
+Fires when a media track was removed from the conference.
+
+<ResponseField name="track" type="JitsiTrack">
+  The removed JitsiTrack
+</ResponseField>
+
+### TRACK_MUTE_CHANGED
+
+**Event:** `conference.trackMuteChanged`
+
+Fires when a media track's mute status has changed.
+
+<ResponseField name="track" type="JitsiTrack">
+  The track whose mute status changed
+</ResponseField>
+
+<ResponseField name="initiator" type="JitsiParticipant | null">
+  The participant who initiated the mute if it is a remote mute, or null for local mute
+</ResponseField>
+
+### TRACK_AUDIO_LEVEL_CHANGED
+
+**Event:** `conference.audioLevelsChanged`
+
+Fires when the audio level of a media track has changed.
+
+### TRACK_UNMUTE_REJECTED
+
+**Event:** `conference.trackUnmuteRejected`
+
+Fires when the source-add for unmuting of a media track was rejected by Jicofo.
+
+---
+
+## Audio/Video Permissions
+
+### AUDIO_UNMUTE_PERMISSIONS_CHANGED
+
+**Event:** `conference.audio_unmute_permissions_changed`
+
+Fires when the permission for unmuting audio has changed based on the number of audio senders and the configured limit.
+
+### VIDEO_UNMUTE_PERMISSIONS_CHANGED
+
+**Event:** `conference.video_unmute_permissions_changed`
+
+Fires when the permission for unmuting video has changed based on the number of video senders and the configured limit.
+
+### AUDIO_INPUT_STATE_CHANGE
+
+**Event:** `conference.audio_input_state_changed`
+
+Fires when the current conference audio input has switched between audio input states (with or without audio input).
+
+### NO_AUDIO_INPUT
+
+**Event:** `conference.no_audio_input`
+
+Fires when the current selected input device has no signal.
+
+### NOISY_MIC
+
+**Event:** `conference.noisy_mic`
+
+Fires when the current microphone used by the conference is noisy.
+
+### TALK_WHILE_MUTED
+
+**Event:** `conference.talk_while_muted`
+
+Fires when the local user is talking while muted.
+
+---
+
+## AV Moderation
+
+### AV_MODERATION_CHANGED
+
+**Event:** `conference.av_moderation.changed`
+
+Fires when AV moderation was enabled or disabled.
+
+<ResponseField name="enabled" type="boolean">
+  Whether moderation is enabled
+</ResponseField>
+
+<ResponseField name="mediaType" type="MediaType">
+  The media type being moderated (audio or video)
+</ResponseField>
+
+<ResponseField name="actor" type="JitsiParticipant | undefined">
+  The participant who changed the moderation state, or undefined if they left
+</ResponseField>
+
+### AV_MODERATION_APPROVED
+
+**Event:** `conference.av_moderation.approved`
+
+Fires when the local participant was approved to unmute.
+
+<ResponseField name="mediaType" type="MediaType">
+  The media type that was approved
+</ResponseField>
+
+### AV_MODERATION_REJECTED
+
+**Event:** `conference.av_moderation.rejected`
+
+Fires when the local participant was blocked from unmuting.
+
+<ResponseField name="mediaType" type="MediaType">
+  The media type that was rejected
+</ResponseField>
+
+### AV_MODERATION_PARTICIPANT_APPROVED
+
+**Event:** `conference.av_moderation.participant.approved`
+
+Fires when a participant was approved to unmute.
+
+<ResponseField name="participant" type="JitsiParticipant">
+  The participant who was approved
+</ResponseField>
+
+<ResponseField name="mediaType" type="MediaType">
+  The media type that was approved
+</ResponseField>
+
+### AV_MODERATION_PARTICIPANT_REJECTED
+
+**Event:** `conference.av_moderation.participant.rejected`
+
+Fires when a participant was blocked from unmuting.
+
+<ResponseField name="participant" type="JitsiParticipant">
+  The participant who was rejected
+</ResponseField>
+
+<ResponseField name="mediaType" type="MediaType">
+  The media type that was rejected
+</ResponseField>
+
+---
+
+## Data Channels
+
+### DATA_CHANNEL_OPENED
+
+**Event:** `conference.dataChannelOpened`
+
+Fires when a connection to the video bridge's data channel has been established.
+
+### DATA_CHANNEL_CLOSED
+
+**Event:** `conference.dataChannelClosed`
+
+Fires when the connection to the video bridge's data channel has been closed.
+
+### ENDPOINT_MESSAGE_RECEIVED
+
+**Event:** `conference.endpoint_message_received`
+
+Fires when a message from another participant is received on the data channel.
+
+### NON_PARTICIPANT_MESSAGE_RECEIVED
+
+**Event:** `conference.non_participant_message_received`
+
+Fires when a message from the local user or from the Prosody backend is received on the data channel.
+
+---
+
+## Messaging
+
+### MESSAGE_RECEIVED
+
+**Event:** `conference.messageReceived`
+
+Fires when a new text message was received.
+
+### PRIVATE_MESSAGE_RECEIVED
+
+**Event:** `conference.privateMessageReceived`
+
+Fires when a new private text message was received.
+
+---
+
+## Conference Settings
+
+### SUBJECT_CHANGED
+
+**Event:** `conference.subjectChanged`
+
+Fires when the subject of the conference has changed.
+
+### LOCK_STATE_CHANGED
+
+**Event:** `conference.lock_state_changed`
+
+Fires when the room has been locked or unlocked.
+
+### MEMBERS_ONLY_CHANGED
+
+**Event:** `conference.membersOnlyChanged`
+
+Fires when the conference has changed to members-only enabled/disabled.
+
+<ResponseField name="enabled" type="boolean">
+  True when the conference is running in members-only mode
+</ResponseField>
+
+<Note>
+  You may need to use Lobby if supported to ask for permissions to enter the conference.
+</Note>
+
+### PROPERTIES_CHANGED
+
+**Event:** `conference.propertiesChanged`
+
+Fires when the conference properties have changed.
+
+### METADATA_UPDATED
+
+**Event:** `conference.metadata.updated`
+
+Fires when the conference metadata has been updated.
+
+### PHONE_NUMBER_CHANGED
+
+**Event:** `conference.phoneNumberChanged`
+
+Fires when the phone number has changed.
+
+### START_MUTED_POLICY_CHANGED
+
+**Event:** `conference.start_muted_policy_changed`
+
+Fires when the start muted settings have changed.
+
+### PERMISSIONS_RECEIVED
+
+**Event:** `conference.permissions_received`
+
+Fires when the permissions for the local participant were updated.
+
+---
+
+## Lobby
+
+### LOBBY_USER_JOINED
+
+**Event:** `conference.lobby.userJoined`
+
+Fires when a new user joined the lobby room.
+
+### LOBBY_USER_LEFT
+
+**Event:** `conference.lobby.userLeft`
+
+Fires when a user left the lobby room.
+
+### LOBBY_USER_UPDATED
+
+**Event:** `conference.lobby.userUpdated`
+
+Fires when a user from the lobby room has been updated.
+
+---
+
+## Breakout Rooms
+
+### BREAKOUT_ROOMS_UPDATED
+
+**Event:** `conference.breakout-rooms.updated`
+
+Fires when the breakout rooms data was updated.
+
+### BREAKOUT_ROOMS_MOVE_TO_ROOM
+
+**Event:** `conference.breakout-rooms.move-to-room`
+
+Fires when a participant is requested to join a given breakout room.
+
+---
+
+## Polls and Reactions
+
+### POLL_RECEIVED
+
+**Event:** `conference.pollReceived`
+
+Fires when a new poll was received or a poll is loaded from history.
+
+### POLL_ANSWER_RECEIVED
+
+**Event:** `conference.pollAnswerReceived`
+
+Fires when an answer for a poll was received.
+
+### REACTION_RECEIVED
+
+**Event:** `conference.reactionReceived`
+
+Fires when a new reaction was received.
+
+---
+
+## File Sharing
+
+### FILE_SHARING_FILE_ADDED
+
+**Event:** `conference.file_sharing.file_added`
+
+Fires when a file is added to the conference.
+
+<ResponseField name="file" type="IFileMetadata">
+  The file object containing metadata about the file
+</ResponseField>
+
+### FILE_SHARING_FILE_REMOVED
+
+**Event:** `conference.file_sharing.file_removed`
+
+Fires when a file is removed from the conference.
+
+<ResponseField name="fileId" type="string">
+  The ID of the file that was removed
+</ResponseField>
+
+### FILE_SHARING_FILES_RECEIVED
+
+**Event:** `conference.file_sharing.files_received`
+
+Fires when a list of files is received in the conference. This event fires when a participant joins and the file list is sent to them.
+
+<ResponseField name="files" type="Map<string, IFileMetadata>">
+  Map of files received in the conference with the file ID as the key
+</ResponseField>
+
+---
+
+## Recording and Transcription
+
+### RECORDER_STATE_CHANGED
+
+**Event:** `conference.recorderStateChanged`
+
+Fires when the recording state has changed.
+
+### TRANSCRIPTION_STATUS_CHANGED
+
+**Event:** `conference.transcriptionStatusChanged`
+
+Fires when the transcription status has changed.
+
+<ResponseField name="status" type="string">
+  The new transcription status
+</ResponseField>
+
+---
+
+## E2EE (End-to-End Encryption)
+
+### E2EE_VERIFICATION_READY
+
+**Event:** `conference.e2ee.verification.ready`
+
+Fires when E2EE verification is ready.
+
+### E2EE_VERIFICATION_AVAILABLE
+
+**Event:** `conference.e2ee.verification.available`
+
+Fires when E2EE verification is available.
+
+### E2EE_VERIFICATION_COMPLETED
+
+**Event:** `conference.e2ee.verification.completed`
+
+Fires when E2EE verification has been completed.
+
+---
+
+## P2P Mode
+
+### P2P_STATUS
+
+**Event:** `conference.p2pStatus`
+
+Fires when the conference has switched between JVB (Jitsi Videobridge) and P2P connections.
+
+<ResponseField name="isP2P" type="boolean">
+  True when the conference is running on P2P connection, false when using JVB
+</ResponseField>
+
+---
+
+## Network Quality
+
+### LAST_N_ENDPOINTS_CHANGED
+
+**Event:** `conference.lastNEndpointsChanged`
+
+Fires when the Last N set has changed.
+
+<ResponseField name="leavingEndpointIds" type="string[] | null">
+  The IDs of all endpoints leaving Last N
+</ResponseField>
+
+<ResponseField name="enteringEndpointIds" type="string[] | null">
+  The IDs of all endpoints entering Last N
+</ResponseField>
+
+### FORWARDED_SOURCES_CHANGED
+
+**Event:** `conference.forwardedSourcesChanged`
+
+Fires when the forwarded sources set has changed.
+
+<ResponseField name="leavingForwardedSources" type="string[]">
+  The source names of all tracks leaving forwarded sources
+</ResponseField>
+
+<ResponseField name="enteringForwardedSources" type="string[]">
+  The source names of all tracks entering forwarded sources
+</ResponseField>
+
+---
+
+## Statistics
+
+### ENDPOINT_STATS_RECEIVED
+
+**Event:** `conference.endpoint_stats_received`
+
+Fires when a message for remote endpoint statistics has been received on the bridge channel.
+
+### BRIDGE_BWE_STATS_RECEIVED
+
+**Event:** `conference.bridgeBweStatsReceived`
+
+Fires when bandwidth estimation stats are received from the bridge.
+
+### ENCODE_TIME_STATS_RECEIVED
+
+**Event:** `conference.encode_time_stats_received`
+
+Fires when encode time stats for local video sources have been received.
+
+### BEFORE_STATISTICS_DISPOSED
+
+**Event:** `conference.beforeStatisticsDisposed`
+
+Fires just before the statistics module is disposed. This is the last chance to submit logs to the statistics service before it's disconnected.
+
+---
+
+## Server and Region
+
+### SERVER_REGION_CHANGED
+
+**Event:** `conference.server_region_changed`
+
+Fires when the region of the media server (jitsi-videobridge) that we are connected to has changed or was initially set.
+
+---
+
+## Video Features
+
+### DOMINANT_SPEAKER_CHANGED
+
+**Event:** `conference.dominantSpeaker`
+
+Fires when the dominant speaker has changed.
+
+### VIDEO_CODEC_CHANGED
+
+**Event:** `conference.videoCodecChanged`
+
+Fires when the video codec of the local video track has changed.
+
+---
+
+## Video SIP Gateway
+
+### VIDEO_SIP_GW_AVAILABILITY_CHANGED
+
+**Event:** `conference.videoSIPGWAvailabilityChanged`
+
+Fires when video SIP GW state has changed.
+
+<ResponseField name="status" type="VideoSIPGWConstants">
+  The new status
+</ResponseField>
+
+### VIDEO_SIP_GW_SESSION_STATE_CHANGED
+
+**Event:** `conference.videoSIPGWSessionStateChanged`
+
+Fires when video SIP GW session state has changed.
+
+<ResponseField name="address" type="string">
+  The SIP address
+</ResponseField>
+
+<ResponseField name="oldState" type="VideoSIPGWConstants">
+  The previous state
+</ResponseField>
+
+<ResponseField name="newState" type="VideoSIPGWConstants">
+  The new state
+</ResponseField>
+
+<ResponseField name="displayName" type="string">
+  The display name
+</ResponseField>
+
+---
+
+## Visitors
+
+### VISITORS_SUPPORTED_CHANGED
+
+**Event:** `conference.visitorsSupported`
+
+Fires when the conference has support for visitors.
+
+### VISITORS_MESSAGE
+
+**Event:** `conference.visitors_message`
+
+Fires when a message is received from the visitors component.
+
+### VISITORS_REJECTION
+
+**Event:** `conference.visitors_rejection`
+
+Fires when a request for promotion from visitor was rejected.
+
+### CONFERENCE_VISITOR_CODECS_CHANGED
+
+**Event:** `conference.visitor_codecs_changed`
+
+Fires when the aggregate set of codecs supported by visitors has changed.
+
+---
+
+## Other Events
+
+### AUTH_STATUS_CHANGED
+
+**Event:** `conference.auth_status_changed`
+
+Fires when authentication status has changed.
+
+### BOT_TYPE_CHANGED
+
+**Event:** `conference.bot_type_changed`
+
+Fires when the bot participant type has changed.
+
+### DTMF_SUPPORT_CHANGED
+
+**Event:** `conference.dtmfSupportChanged`
+
+Fires when DTMF support has changed.
+
+### SILENT_STATUS_CHANGED
+
+**Event:** `conference.silentStatusChanged`
+
+Fires when a user has joined without audio.
+
+### SUSPEND_DETECTED
+
+**Event:** `conference.suspendDetected`
+
+Fires when a system suspend has been detected.

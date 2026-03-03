@@ -1,0 +1,532 @@
+---
+title: Screen Sharing
+description: Implement desktop and application sharing in your Jitsi application
+---
+
+This guide covers screen sharing (desktop sharing) implementation using lib-jitsi-meet, including display capture, audio sharing, and screen-specific configurations.
+
+## Overview
+
+Screen sharing in lib-jitsi-meet uses the `getDisplayMedia` API and provides cross-platform support for:
+
+- **Full desktop sharing**: Share entire screen
+- **Window sharing**: Share specific application window
+- **Tab sharing**: Share browser tab (Chromium-based browsers)
+- **System audio**: Capture system audio along with screen (Chrome 104+)
+
+## Creating a Screen Share Track
+
+<Steps>
+
+<Step title="Check if screen sharing is supported">
+```javascript
+if (!JitsiMeetJS.isDesktopSharingEnabled()) {
+    console.error('Screen sharing not supported');
+    return;
+}
+```
+</Step>
+
+<Step title="Request screen sharing">
+```javascript
+JitsiMeetJS.createLocalTracks({
+    devices: ['desktop'],
+    desktopSharingFrameRate: {
+        min: 5,
+        max: 30
+    }
+}).then(tracks => {
+    const desktopTrack = tracks[0];
+    console.log('Screen sharing track created');
+    
+    // Add to conference
+    conference.addTrack(desktopTrack);
+}).catch(error => {
+    if (error.name === 'gum.screensharing_user_canceled') {
+        console.log('User canceled screen sharing');
+    } else {
+        console.error('Screen sharing error:', error);
+    }
+});
+```
+</Step>
+
+</Steps>
+
+## Configuration Options
+
+### Frame Rate Settings
+
+```javascript
+const options = {
+    devices: ['desktop'],
+    
+    // Frame rate configuration
+    desktopSharingFrameRate: {
+        min: 5,    // Minimum fps
+        max: 30    // Maximum fps (higher for motion, lower for static content)
+    }
+};
+
+// Default frame rate is 5 fps (SS_DEFAULT_FRAME_RATE)
+JitsiMeetJS.createLocalTracks(options);
+```
+
+### Resolution Settings
+
+```javascript
+const options = {
+    devices: ['desktop'],
+    
+    // Resolution constraints
+    desktopSharingResolution: {
+        width: {
+            min: 640,
+            max: 1920
+        },
+        height: {
+            min: 480,
+            max: 1080
+        }
+    }
+};
+```
+
+### Advanced Settings
+
+```javascript
+const options = {
+    devices: ['desktop'],
+    
+    // Screen share specific settings
+    screenShareSettings: {
+        // Prefer current tab in picker (Chrome 94+)
+        desktopPreferCurrentTab: false,
+        
+        // System audio option (Chrome 105+)
+        // 'include', 'exclude', or undefined
+        desktopSystemAudio: 'include',
+        
+        // Allow seamless tab switching (Chrome 107+)
+        // 'include', 'exclude', or undefined  
+        desktopSurfaceSwitching: 'include',
+        
+        // Preferred display surface
+        // 'monitor', 'window', 'browser', or undefined
+        desktopDisplaySurface: 'monitor',
+        
+        // Self browser surface option (Chrome 112+)
+        // 'include', 'exclude', or undefined
+        desktopSelfBrowserSurface: 'exclude'
+    },
+    
+    // Electron-specific: source types to show in picker
+    desktopSharingSources: ['screen', 'window']
+};
+```
+
+## Screen Sharing with Audio
+
+### Capture System Audio (Chrome 104+)
+
+<CodeGroup>
+
+```javascript Browser
+const options = {
+    devices: ['desktop'],
+    screenShareSettings: {
+        desktopSystemAudio: 'include'
+    }
+};
+
+JitsiMeetJS.createLocalTracks(options).then(tracks => {
+    tracks.forEach(track => {
+        if (track.getType() === 'video') {
+            console.log('Desktop video track');
+        } else if (track.getType() === 'audio') {
+            console.log('System audio track');
+        }
+        conference.addTrack(track);
+    });
+});
+```
+
+```javascript Electron
+// Electron requires special handling for audio
+const options = {
+    devices: ['desktop'],
+    desktopSharingSources: ['screen'], // Audio only works with 'screen'
+    audioQuality: {
+        stereo: true,
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false
+    }
+};
+```
+
+</CodeGroup>
+
+### Audio Quality Settings
+
+```javascript
+const audioQuality = {
+    // Enable stereo for better system audio
+    stereo: true,
+    
+    // Disable processing for system audio
+    autoGainControl: false,
+    echoCancellation: false,
+    noiseSuppression: false,
+    
+    // Channel count
+    channelCount: 2
+};
+
+const options = {
+    devices: ['desktop'],
+    audioQuality,
+    screenShareSettings: {
+        desktopSystemAudio: 'include'
+    }
+};
+```
+
+## Managing Screen Share Tracks
+
+### Detect Screen Share
+
+```javascript
+// Check if track is screen share
+if (track.getVideoType() === 'desktop') {
+    console.log('This is a screen share track');
+}
+
+// Get source type
+const sourceType = track.sourceType; // 'screen', 'window', 'browser', etc.
+const sourceId = track.sourceId;
+```
+
+### Handle Track Ended
+
+Screen share tracks automatically end when user stops sharing:
+
+```javascript
+desktopTrack.addEventListener(
+    JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,
+    () => {
+        console.log('Screen sharing stopped');
+        
+        // Remove from conference
+        conference.removeTrack(desktopTrack);
+        
+        // Dispose track
+        desktopTrack.dispose();
+        
+        // Update UI
+        updateScreenShareButton(false);
+    }
+);
+```
+
+### Stop Screen Sharing Programmatically
+
+```javascript
+function stopScreenShare() {
+    if (desktopTrack) {
+        conference.removeTrack(desktopTrack).then(() => {
+            desktopTrack.dispose();
+            desktopTrack = null;
+            console.log('Screen sharing stopped');
+        });
+    }
+}
+```
+
+## Content Hint
+
+Optimize encoding based on content type:
+
+```javascript
+// The library automatically sets contentHint based on frame rate
+// High fps (>5): 'motion' - optimized for video content
+// Low fps (≤5): 'detail' - optimized for text/images
+
+// Manual override (if needed)
+const mediaStreamTrack = desktopTrack.track;
+if ('contentHint' in mediaStreamTrack) {
+    // For presentations/documents
+    mediaStreamTrack.contentHint = 'detail';
+    
+    // For video playback
+    mediaStreamTrack.contentHint = 'motion';
+    
+    // For mixed content
+    mediaStreamTrack.contentHint = 'text';
+}
+```
+
+## Platform-Specific Implementation
+
+### Chrome/Chromium
+
+<CodeGroup>
+
+```javascript Modern Chrome
+const options = {
+    devices: ['desktop'],
+    desktopSharingFrameRate: { min: 5, max: 30 },
+    screenShareSettings: {
+        desktopSystemAudio: 'include',
+        desktopSurfaceSwitching: 'include',
+        desktopPreferCurrentTab: false,
+        desktopSelfBrowserSurface: 'exclude'
+    }
+};
+```
+
+```javascript Legacy Chrome
+// For older Chrome versions without getDisplayMedia
+// Uses chrome.desktopCapture extension API
+// Requires browser extension
+```
+
+</CodeGroup>
+
+### Firefox
+
+```javascript
+const options = {
+    devices: ['desktop'],
+    desktopSharingFrameRate: { min: 5, max: 30 },
+    // Firefox supports basic getDisplayMedia
+    // No system audio support
+};
+```
+
+### Safari
+
+```javascript
+const options = {
+    devices: ['desktop'],
+    desktopSharingFrameRate: { min: 5, max: 30 },
+    screenShareSettings: {
+        // Safari supports displaySurface preference
+        desktopDisplaySurface: 'monitor'
+    }
+};
+```
+
+### Electron
+
+```javascript
+const options = {
+    devices: ['desktop'],
+    
+    // Source types to show in picker
+    desktopSharingSources: ['screen', 'window'],
+    
+    // Frame rate and resolution
+    desktopSharingFrameRate: { min: 5, max: 30 },
+    desktopSharingResolution: {
+        width: { max: 1920 },
+        height: { max: 1080 }
+    }
+};
+
+// Electron uses custom desktop picker
+// Configured via JitsiMeetScreenObtainer.openDesktopPicker
+```
+
+## Advanced Use Cases
+
+### Replace Camera with Screen Share
+
+```javascript
+async function switchToScreenShare() {
+    try {
+        // Create screen share track
+        const [desktopTrack] = await JitsiMeetJS.createLocalTracks({
+            devices: ['desktop'],
+            desktopSharingFrameRate: { min: 5, max: 30 }
+        });
+        
+        // Find existing video track
+        const cameraTrack = localTracks.find(
+            t => t.getType() === 'video' && t.getVideoType() === 'camera'
+        );
+        
+        if (cameraTrack) {
+            // Replace camera with screen share
+            await conference.replaceTrack(cameraTrack, desktopTrack);
+            cameraTrack.dispose();
+            
+            // Update tracks array
+            const index = localTracks.indexOf(cameraTrack);
+            localTracks[index] = desktopTrack;
+        } else {
+            // Just add screen share
+            await conference.addTrack(desktopTrack);
+            localTracks.push(desktopTrack);
+        }
+        
+        // Handle track stopped
+        desktopTrack.addEventListener(
+            JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,
+            () => switchBackToCamera()
+        );
+    } catch (error) {
+        console.error('Failed to share screen:', error);
+    }
+}
+
+async function switchBackToCamera() {
+    const [cameraTrack] = await JitsiMeetJS.createLocalTracks({
+        devices: ['video']
+    });
+    
+    const desktopTrack = localTracks.find(
+        t => t.getType() === 'video' && t.getVideoType() === 'desktop'
+    );
+    
+    if (desktopTrack) {
+        await conference.replaceTrack(desktopTrack, cameraTrack);
+        desktopTrack.dispose();
+        
+        const index = localTracks.indexOf(desktopTrack);
+        localTracks[index] = cameraTrack;
+    }
+}
+```
+
+### Share Camera and Screen Simultaneously
+
+```javascript
+async function shareScreenAndCamera() {
+    // Note: Check browser support for multiple video tracks
+    const [desktopTrack] = await JitsiMeetJS.createLocalTracks({
+        devices: ['desktop'],
+        desktopSharingFrameRate: { min: 5, max: 30 }
+    });
+    
+    // Add as second video track
+    await conference.addTrack(desktopTrack);
+    localTracks.push(desktopTrack);
+    
+    // Both camera and screen share are now active
+    console.log('Sharing camera and screen');
+}
+```
+
+### Dynamic Frame Rate Adjustment
+
+```javascript
+// Adjust frame rate based on content
+function setScreenShareFrameRate(maxFps) {
+    // Set globally for future screen shares
+    JitsiMeetJS.setDesktopSharingFrameRate(maxFps);
+    
+    // Or apply to existing track
+    if (desktopTrack) {
+        const track = desktopTrack.track;
+        track.applyConstraints({
+            frameRate: { max: maxFps, min: 5 }
+        }).then(() => {
+            console.log('Frame rate updated to', maxFps);
+        });
+    }
+}
+
+// Use lower fps for presentations
+setScreenShareFrameRate(5);
+
+// Use higher fps for video playback
+setScreenShareFrameRate(30);
+```
+
+## Error Handling
+
+```javascript
+JitsiMeetJS.createLocalTracks({ devices: ['desktop'] })
+    .then(tracks => {
+        // Success
+    })
+    .catch(error => {
+        switch(error.name) {
+            case 'gum.screensharing_user_canceled':
+                console.log('User canceled screen sharing');
+                break;
+                
+            case 'gum.permission_denied':
+                console.error('Screen sharing permission denied');
+                break;
+                
+            case 'gum.screensharing_not_supported':
+                console.error('Screen sharing not supported');
+                break;
+                
+            case 'gum.electron_desktop_picker_not_found':
+                console.error('Electron desktop picker not available');
+                break;
+                
+            case 'gum.electron_desktop_picker_error':
+                console.error('Electron desktop picker error');
+                break;
+                
+            default:
+                console.error('Screen sharing error:', error);
+        }
+    });
+```
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Optimize frame rate for content type">
+Use low frame rates (5 fps) for static content like presentations and documents. Use higher frame rates (15-30 fps) for video playback or animations.
+
+```javascript
+// Static content
+desktopSharingFrameRate: { min: 5, max: 5 }
+
+// Video content
+desktopSharingFrameRate: { min: 15, max: 30 }
+```
+</Accordion>
+
+<Accordion title="Handle track stopped event">
+Always listen for the LOCAL_TRACK_STOPPED event to update UI when user stops sharing:
+
+```javascript
+desktopTrack.addEventListener(
+    JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,
+    handleScreenShareStopped
+);
+```
+</Accordion>
+
+<Accordion title="Check browser capabilities">
+```javascript
+const supportsSystemAudio = 
+    JitsiMeetJS.browser.isChromiumBased() && 
+    JitsiMeetJS.browser.isEngineVersionGreaterThan(104);
+
+if (supportsSystemAudio) {
+    // Enable system audio option
+}
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Audio/Video Quality" icon="signal" href="/guides/audio-video-quality">
+    Control encoding quality
+  </Card>
+  <Card title="Recording" icon="record-vinyl" href="/guides/recording">
+    Record conferences and screen shares
+  </Card>
+</CardGroup>

@@ -1,0 +1,492 @@
+---
+title: Codec Selection
+description: Understanding codec preferences, selection algorithms, and quality constraints in lib-jitsi-meet
+---
+
+# Codec Selection
+
+lib-jitsi-meet implements sophisticated codec selection to optimize video quality across different network conditions, browsers, and device capabilities.
+
+## CodecSelection Class
+
+The `CodecSelection` class manages codec preferences for both JVB and P2P connections.
+
+### Initialization
+
+```typescript
+const codecSelection = new CodecSelection(conference, {
+    jvb: {
+        preferenceOrder: ['av1', 'vp9', 'vp8', 'h264'],
+        screenshareCodec: 'av1',
+        disabledCodec: undefined,      // Deprecated
+        preferredCodec: undefined,      // Deprecated
+        enableAV1ForFF: false
+    },
+    p2p: {
+        preferenceOrder: ['h264', 'vp8', 'vp9', 'av1'],
+        screenshareCodec: 'av1'
+    }
+});
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:55-62`
+
+### Configuration Options
+
+```typescript
+interface ICodecSelectionOptions {
+    [connectionType: string]: {
+        disabledCodec?: string;           // Deprecated: codec to disable
+        enableAV1ForFF?: boolean;         // Enable AV1 on Firefox
+        preferenceOrder?: string[];       // Codec preference list
+        preferredCodec?: string;          // Deprecated: preferred codec
+        screenshareCodec?: string;        // Codec for screenshare
+    };
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:19-27`
+
+## Default Codec Orders
+
+lib-jitsi-meet uses different default codec orders based on platform and connection type:
+
+```typescript
+// Desktop endpoints (JVB and P2P)
+const DESKTOP_VIDEO_CODEC_ORDER = [
+    CodecMimeType.AV1,
+    CodecMimeType.VP9,
+    CodecMimeType.VP8,
+    CodecMimeType.H264
+];
+
+// Mobile endpoints (JVB connection)
+const MOBILE_VIDEO_CODEC_ORDER = [
+    CodecMimeType.VP8,
+    CodecMimeType.VP9,
+    CodecMimeType.H264,
+    CodecMimeType.AV1
+];
+
+// Mobile endpoints (P2P connection)
+const MOBILE_P2P_VIDEO_CODEC_ORDER = [
+    CodecMimeType.H264,
+    CodecMimeType.VP8,
+    CodecMimeType.VP9,
+    CodecMimeType.AV1
+];
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:15-17`
+
+**Rationale:**
+- **Desktop JVB**: Prefer newer codecs (AV1, VP9) for better quality/bandwidth
+- **Mobile JVB**: Prefer VP8 for better hardware support and battery life
+- **Mobile P2P**: Prefer H.264 for hardware acceleration and interoperability
+
+## Codec Support Detection
+
+The codec list is filtered based on browser capabilities:
+
+```typescript
+_getSupportedVideoCodecs(connectionType: string): string[] {
+    const videoCodecMimeTypes = browser.isMobileDevice() && connectionType === 'p2p'
+        ? MOBILE_P2P_VIDEO_CODEC_ORDER
+        : browser.isMobileDevice() 
+            ? MOBILE_VIDEO_CODEC_ORDER 
+            : DESKTOP_VIDEO_CODEC_ORDER;
+    
+    const supportedCodecs = videoCodecMimeTypes.filter(codec =>
+        (window.RTCRtpReceiver?.getCapabilities?.(MediaType.VIDEO)?.codecs ?? [])
+            .some(supportedCodec => 
+                supportedCodec.mimeType.toLowerCase() === `${MediaType.VIDEO}/${codec}`
+            )
+    );
+    
+    // Fallback to VP8 if no codecs detected
+    !supportedCodecs.length && supportedCodecs.push(CodecMimeType.VP8);
+    
+    return supportedCodecs;
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:137-151`
+
+## Codec Preference Order Generation
+
+The constructor generates the final codec order based on config and browser support:
+
+```typescript
+for (const connectionType of Object.keys(options)) {
+    let { disabledCodec, preferredCodec, preferenceOrder } = options[connectionType];
+    const { enableAV1ForFF = false, screenshareCodec } = options[connectionType];
+    const supportedCodecs = new Set(this._getSupportedVideoCodecs(connectionType));
+    
+    let selectedOrder = Array.from(supportedCodecs);
+    
+    // Option 1: Use explicit preference order
+    if (preferenceOrder) {
+        preferenceOrder = preferenceOrder.map(codec => codec.toLowerCase());
+        selectedOrder = preferenceOrder.filter(codec => supportedCodecs.has(codec));
+    
+    // Option 2: Use deprecated preferredCodec/disabledCodec
+    } else if (preferredCodec || disabledCodec) {
+        disabledCodec = disabledCodec?.toLowerCase();
+        preferredCodec = preferredCodec?.toLowerCase();
+        
+        // VP8 cannot be disabled (default codec)
+        if (disabledCodec && disabledCodec !== CodecMimeType.VP8) {
+            selectedOrder = selectedOrder.filter(codec => codec !== disabledCodec);
+        }
+        
+        const index = selectedOrder.findIndex(codec => codec === preferredCodec);
+        
+        // Move preferred codec to front
+        if (preferredCodec && index !== -1) {
+            selectedOrder.splice(index, 1);
+            selectedOrder.unshift(preferredCodec);
+        }
+    }
+    
+    // ... Browser-specific adjustments ...
+    
+    this.codecPreferenceOrder[connectionType] = selectedOrder;
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:63-94, 122`
+
+## Browser-Specific Adjustments
+
+### Firefox AV1 Handling
+
+```typescript
+// Push AV1 to end of list if not explicitly enabled on Firefox
+if (codec === CodecMimeType.AV1 && browser.isFirefox() && !enableAV1ForFF) {
+    const index = selectedOrder.findIndex(selectedCodec => selectedCodec === codec);
+    if (index !== -1) {
+        selectedOrder.splice(index, 1);
+        selectedOrder.push(codec);  // Move to end
+    }
+}
+```
+
+Firefox 136+ supports AV1 but only with simulcast (not SVC) and lacks temporal scalability. AV1 is moved to the end so Firefox decodes AV1 from others but encodes with VP8.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:96-112`
+
+### VP9 Encoding Support
+
+```typescript
+const isVp9EncodeSupported = browser.supportsVP9() 
+    || (browser.isWebKitBased() && connectionType === 'p2p');
+
+if (codec === CodecMimeType.VP9 && !isVp9EncodeSupported) {
+    const index = selectedOrder.findIndex(selectedCodec => selectedCodec === codec);
+    if (index !== -1) {
+        selectedOrder.splice(index, 1);
+        selectedOrder.push(codec);
+    }
+}
+```
+
+VP9 is disabled on Safari (except P2P) and Firefox due to implementation issues. See: https://bugs.webkit.org/show_bug.cgi?id=231074
+
+Source: `modules/qualitycontrol/CodecSelection.ts:100-112`
+
+### Safari AV1 Disabled
+
+```typescript
+if (browser.isWebKitBased()) {
+    selectedOrder = selectedOrder.filter(codec => codec !== CodecMimeType.AV1);
+}
+```
+
+Safari reports AV1 as supported on M3+ Macs but has decoder/encoder issues. AV1 is completely disabled until resolved.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:117-119`
+
+## Screenshare Codec Selection
+
+```typescript
+if (screenshareCodec && supportedCodecs.has(screenshareCodec.toLowerCase())) {
+    this.screenshareCodec[connectionType] = screenshareCodec.toLowerCase();
+}
+```
+
+Screenshare can use a different codec than camera. By default, AV1 is preferred for screenshare when available.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:125-127`
+
+## Codec Negotiation
+
+The `selectPreferredCodec` method calculates the codec to use based on local preferences and remote capabilities:
+
+```typescript
+selectPreferredCodec(mediaSession?: JingleSessionPC): void {
+    const session = mediaSession || this.conference.jvbJingleSession;
+    if (!session) return;
+    
+    let localPreferredCodecOrder = this.codecPreferenceOrder.jvb;
+    
+    // E2EE only supports VP8
+    if (this.conference.isE2EEEnabled()) {
+        localPreferredCodecOrder = [ CodecMimeType.VP8 ];
+    }
+    
+    // Get remote codec lists from all participants
+    const remoteParticipants = this.conference.getParticipants()
+        .map(participant => participant.getId());
+    const remoteCodecsPerParticipant = remoteParticipants?.map(remote => {
+        const peerMediaInfo = session._signalingLayer.getPeerMediaInfo(remote, MediaType.VIDEO);
+        
+        if (peerMediaInfo?.codecList) {
+            return peerMediaInfo.codecList;
+        } else if (peerMediaInfo?.codecType) {
+            return [ peerMediaInfo.codecType ];
+        }
+        return [];
+    }) ?? [];
+    
+    // Include visitor codecs
+    this.visitorCodecs.length && remoteCodecsPerParticipant.push(this.visitorCodecs);
+    
+    // Filter to codecs supported by ALL remote participants
+    const selectedCodecOrder = localPreferredCodecOrder.reduce<CodecMimeType[]>((acc, localCodec) => {
+        let codecNotSupportedByRemote = false;
+        
+        for (const remoteCodecs of remoteCodecsPerParticipant) {
+            // Ignore participants without codec info (transcriber)
+            if (remoteCodecs.length) {
+                codecNotSupportedByRemote = codecNotSupportedByRemote
+                    || !remoteCodecs.find(participantCodec => participantCodec === localCodec);
+            }
+        }
+        if (!codecNotSupportedByRemote) {
+            acc.push(localCodec as CodecMimeType);
+        }
+        return acc;
+    }, []);
+    
+    if (!selectedCodecOrder.length) {
+        logger.warn('Invalid codec list - user joining/leaving');
+        return;
+    }
+    
+    session.setVideoCodecs(selectedCodecOrder, this.screenshareCodec?.jvb as CodecMimeType);
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:179-235`
+
+### E2EE Constraint
+
+```typescript
+if (this.conference.isE2EEEnabled()) {
+    localPreferredCodecOrder = [ CodecMimeType.VP8 ];
+}
+```
+
+End-to-end encryption is currently only supported with VP8.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:188-190`
+
+### Asymmetric Codec Support
+
+lib-jitsi-meet supports asymmetric codecs (decode different codec than encode):
+
+```typescript
+// Local preference order is maintained even if remote doesn't support all codecs
+const selectedCodecOrder = localPreferredCodecOrder.reduce<CodecMimeType[]>((acc, localCodec) => {
+    // Only exclude if NO remote endpoint supports it
+    if (!codecNotSupportedByRemote) {
+        acc.push(localCodec);
+    }
+    return acc;
+}, []);
+```
+
+This allows endpoints to encode with VP8 while decoding AV1 from others.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:209-226`
+
+## Dynamic Codec Switching
+
+Codecs can be changed dynamically due to CPU restrictions:
+
+```typescript
+changeCodecPreferenceOrder(localTrack: JitsiLocalTrack, codec: string): boolean {
+    const session = this.conference.getActiveMediaSession();
+    const connectionType = session.isP2P ? 'p2p' : 'jvb';
+    const codecOrder = this.codecPreferenceOrder[connectionType];
+    const videoType = localTrack.getVideoType();
+    
+    // Get codecs by complexity for this video type
+    const codecsByVideoType = VIDEO_CODECS_BY_COMPLEXITY[videoType]
+        .filter(val => Boolean(codecOrder.find(supportedCodec => supportedCodec === val)));
+    const codecIndex = codecsByVideoType.findIndex(val => val === codec.toLowerCase());
+    
+    // Already using lowest complexity codec
+    if (codecIndex === codecsByVideoType.length - 1) {
+        return false;
+    }
+    
+    const newCodec = codecsByVideoType[codecIndex + 1];
+    
+    if (videoType === VideoType.CAMERA) {
+        // Move new codec to front for camera
+        const idx = codecOrder.findIndex(val => val === newCodec);
+        codecOrder.splice(idx, 1);
+        codecOrder.unshift(newCodec);
+        logger.info(`QualityController - switching camera codec to ${newCodec} due to CPU restriction`);
+    } else {
+        // Update screenshare codec
+        this.screenshareCodec[connectionType] = newCodec;
+        logger.info(`QualityController - switching screenshare codec to ${newCodec} due to CPU restriction`);
+    }
+    
+    this.selectPreferredCodec(session);
+    return true;
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:244-274`
+
+### Codec Complexity Order
+
+Codecs are ordered by encoding complexity (from `StandardVideoQualitySettings.ts`):
+
+```typescript
+const VIDEO_CODECS_BY_COMPLEXITY = {
+    [VideoType.CAMERA]: ['av1', 'vp9', 'vp8', 'h264'],
+    [VideoType.DESKTOP]: ['av1', 'vp9', 'vp8', 'h264']
+};
+```
+
+When CPU is overloaded, the quality controller switches to a lower complexity codec.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:6, 249-250`
+
+## Visitor Codec Support
+
+```typescript
+updateVisitorCodecs(codecList: string[]): void {
+    if (this.visitorCodecs === codecList) {
+        return;
+    }
+    
+    this.visitorCodecs = codecList;
+    this.selectPreferredCodec();
+}
+```
+
+Visitors (participants without sending capability) can specify their codec support, which is factored into codec negotiation.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:282-289`
+
+## Codec Capabilities API
+
+### Getting Codec Preference List
+
+```typescript
+getCodecPreferenceList(connectionType: string): string[] {
+    return this.codecPreferenceOrder[connectionType];
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:159-161`
+
+### Getting Screenshare Codec
+
+```typescript
+getScreenshareCodec(connectionType: string): Optional<string> {
+    return this.screenshareCodec[connectionType];
+}
+```
+
+Source: `modules/qualitycontrol/CodecSelection.ts:169-171`
+
+## Integration with TraceablePeerConnection
+
+The codec selection integrates with the peer connection:
+
+### setCodecPreferences API
+
+For browsers supporting `RTCRtpTransceiver.setCodecPreferences()` (Chrome, Edge):
+
+```typescript
+if (browser.supportsCodecPreferences()) {
+    const transceivers = pc.getTransceivers()
+        .filter(t => t.receiver?.track?.kind === mediaType);
+    let capabilities = RTCRtpReceiver.getCapabilities(mediaType)?.codecs;
+    
+    // Rearrange based on preference order
+    for (const codec of codecList.slice().reverse()) {
+        capabilities.sort(caps => 
+            caps.mimeType.toLowerCase() === `${mediaType}/${codec}` ? -1 : 1
+        );
+    }
+    
+    for (const transceiver of transceivers) {
+        transceiver.setCodecPreferences(capabilities);
+    }
+}
+```
+
+Source: modules/RTC/TraceablePeerConnection.ts:1116-1144
+
+### Codec Selection API (Chrome 126+)
+
+For browsers supporting per-encoding codec selection:
+
+```typescript
+if (this.usesCodecSelectionAPI()) {
+    const expectedPattern = `${MediaType.VIDEO}/${codec.toUpperCase()}`;
+    const matchingCodec = parameters.codecs.find(pt => pt.mimeType === expectedPattern);
+    encoding.codec = matchingCodec;
+}
+```
+
+This allows changing codecs without renegotiation.
+
+Source: modules/RTC/TraceablePeerConnection.ts:1007-1023
+
+<Warning>
+**VP8 Cannot Be Disabled**
+
+VP8 is the baseline codec and cannot be disabled:
+
+```typescript
+if (disabledCodec && disabledCodec !== CodecMimeType.VP8) {
+    selectedOrder = selectedOrder.filter(codec => codec !== disabledCodec);
+}
+```
+
+Attempting to disable VP8 will be ignored. This ensures all endpoints can communicate.
+
+Source: `modules/qualitycontrol/CodecSelection.ts:83-85`
+</Warning>
+
+## Best Practices
+
+1. **Use preferenceOrder over deprecated settings**: The `preferenceOrder` array provides more flexibility than `preferredCodec`/`disabledCodec`.
+
+2. **Different codecs for JVB and P2P**: Optimize for each connection type:
+   ```typescript
+   {
+       jvb: { preferenceOrder: ['av1', 'vp9', 'vp8', 'h264'] },
+       p2p: { preferenceOrder: ['h264', 'vp8', 'vp9', 'av1'] }
+   }
+   ```
+
+3. **Test on target browsers**: Codec support varies significantly. Use `_getSupportedVideoCodecs()` to verify.
+
+4. **Consider hardware acceleration**: H.264 has better hardware support on mobile devices.
+
+5. **Monitor CPU usage**: Use `changeCodecPreferenceOrder()` to dynamically adjust based on CPU load.
+
+## Next Steps
+
+- [WebRTC Internals](/advanced/webrtc-internals) - Encoding parameters and SDP
+- [Network Optimization](/advanced/network-optimization) - Bandwidth adaptation
+- [Browser Compatibility](/advanced/browser-compatibility) - Feature detection

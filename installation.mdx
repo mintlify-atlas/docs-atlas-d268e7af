@@ -1,0 +1,214 @@
+---
+title: Installation
+description: Install lib-jitsi-meet in your project using npm, yarn, UMD bundle, or React Native
+---
+
+# Installation Guide
+
+lib-jitsi-meet can be installed via package managers or included directly as a UMD bundle. Choose the method that best fits your project setup.
+
+<Note>
+  lib-jitsi-meet is **not published to npm**. It's distributed via GitHub releases as `.tgz` packages.
+</Note>
+
+## Package Manager Installation
+
+Install lib-jitsi-meet from a GitHub release URL:
+
+<CodeGroup>
+```bash npm
+npm install https://github.com/jitsi/lib-jitsi-meet/releases/download/v<version>+<commit-hash>/lib-jitsi-meet.tgz
+```
+
+```bash yarn
+yarn add https://github.com/jitsi/lib-jitsi-meet/releases/download/v<version>+<commit-hash>/lib-jitsi-meet.tgz
+```
+
+```bash pnpm
+pnpm add https://github.com/jitsi/lib-jitsi-meet/releases/download/v<version>+<commit-hash>/lib-jitsi-meet.tgz
+```
+</CodeGroup>
+
+<Note>
+  Replace `<version>` and `<commit-hash>` with the actual release version. Check the [GitHub releases page](https://github.com/jitsi/lib-jitsi-meet/releases) for available versions.
+</Note>
+
+### Import in Your Application
+
+After installation, import JitsiMeetJS in your JavaScript/TypeScript files:
+
+<CodeGroup>
+```javascript ES Modules
+import JitsiMeetJS from 'lib-jitsi-meet';
+
+// Initialize the library
+JitsiMeetJS.init();
+```
+
+```javascript CommonJS
+const JitsiMeetJS = require('lib-jitsi-meet');
+
+// Initialize the library
+JitsiMeetJS.init();
+```
+</CodeGroup>
+
+## UMD Bundle (Script Tag)
+
+For browser-based projects without a build system, include the UMD bundle directly:
+
+<Steps>
+  <Step title="Download the Bundle">
+    Download `lib-jitsi-meet.min.js` from a GitHub release or build it yourself:
+    
+    ```bash
+    git clone https://github.com/jitsi/lib-jitsi-meet.git
+    cd lib-jitsi-meet
+    npm install
+    npm run build
+    ```
+    
+    The UMD bundle will be available at `dist/umd/lib-jitsi-meet.min.js`
+  </Step>
+
+  <Step title="Include in HTML">
+    Add the script tag to your HTML file:
+    
+    ```html
+    <script src="path/to/lib-jitsi-meet.min.js"></script>
+    <script>
+      // JitsiMeetJS is now available globally
+      JitsiMeetJS.init();
+    </script>
+    ```
+  </Step>
+
+  <Step title="Access Global Object">
+    The library is exposed as a global `JitsiMeetJS` object:
+    
+    ```javascript
+    const connection = new JitsiMeetJS.JitsiConnection(appId, token, options);
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The UMD bundle path is defined in `package.json` under the `"browser"` field: `"dist/umd/lib-jitsi-meet.min.js"`
+</Note>
+
+## React Native Setup
+
+lib-jitsi-meet supports React Native applications with the ESM build:
+
+<Steps>
+  <Step title="Install the Package">
+    ```bash
+    npm install https://github.com/jitsi/lib-jitsi-meet/releases/download/v<version>+<commit-hash>/lib-jitsi-meet.tgz
+    ```
+  </Step>
+
+  <Step title="Import in React Native">
+    The library automatically uses the React Native entry point defined in `package.json`:
+    
+    ```javascript
+    import JitsiMeetJS from 'lib-jitsi-meet';
+    
+    // Initialize for React Native
+    JitsiMeetJS.init({
+      disableThirdPartyRequests: true,
+      // React Native specific options
+    });
+    ```
+  </Step>
+
+  <Step title="Handle Platform Differences">
+    Be aware of platform-specific WebRTC behavior:
+    
+    ```javascript
+    import { Platform } from 'react-native';
+    
+    const options = {
+      devices: ['audio', 'video'],
+      // iOS/Android specific constraints
+      facingMode: Platform.OS === 'ios' ? 'user' : undefined,
+    };
+    
+    const tracks = await JitsiMeetJS.createLocalTracks(options);
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The React Native entry point is defined in `package.json`: `"react-native": "./dist/esm/JitsiMeetJS.js"`
+</Note>
+
+## TypeScript Setup
+
+lib-jitsi-meet includes TypeScript type definitions:
+
+<Steps>
+  <Step title="Automatic Type Definitions">
+    Type definitions are automatically included when you install the package. They're generated from the TypeScript source code.
+  </Step>
+
+  <Step title="Import with Types">
+    ```typescript
+    import JitsiMeetJS, { IJitsiMeetJSOptions } from 'lib-jitsi-meet';
+    import { JitsiConnectionEvents } from 'lib-jitsi-meet/JitsiConnectionEvents';
+    import { JitsiConferenceEvents } from 'lib-jitsi-meet/JitsiConferenceEvents';
+    
+    const options: IJitsiMeetJSOptions = {
+      enableAnalyticsLogging: true,
+      disableAudioLevels: false,
+    };
+    
+    JitsiMeetJS.init(options);
+    ```
+  </Step>
+
+  <Step title="Configure TypeScript">
+    Ensure your `tsconfig.json` allows ESM imports:
+    
+    ```json
+    {
+      "compilerOptions": {
+        "module": "ES2020",
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Verify Installation
+
+Test that lib-jitsi-meet is correctly installed:
+
+```javascript
+import JitsiMeetJS from 'lib-jitsi-meet';
+
+console.log('lib-jitsi-meet version:', JitsiMeetJS.version);
+console.log('WebRTC supported:', JitsiMeetJS.isWebRtcSupported());
+console.log('Desktop sharing enabled:', JitsiMeetJS.isDesktopSharingEnabled());
+```
+
+## Build Outputs
+
+lib-jitsi-meet provides two build outputs:
+
+- **ESM** (`dist/esm/JitsiMeetJS.js`) - For modern bundlers and React Native
+- **UMD** (`dist/umd/lib-jitsi-meet.min.js`) - For browser `<script>` tags
+
+The correct build is automatically selected based on your environment.
+
+## Next Steps
+
+<Card
+  title="Quick Start Guide"
+  icon="rocket"
+  href="/quickstart"
+>
+  Create your first video conference with lib-jitsi-meet
+</Card>

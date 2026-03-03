@@ -1,0 +1,568 @@
+---
+title: JitsiConference
+description: Conference lifecycle, events, and room management
+---
+
+The `JitsiConference` class represents a video conference session and provides methods for managing participants, tracks, and conference state.
+
+## Overview
+
+`JitsiConference` handles:
+
+- Conference room lifecycle (join, leave)
+- Participant management
+- Media track management (local and remote)
+- Conference properties and state
+- P2P and JVB connection modes
+- Recording, transcription, and advanced features
+
+## Creating a Conference
+
+Conferences are created through a `JitsiConnection`:
+
+```typescript
+const conference = connection.initJitsiConference('room-name', {
+    openBridgeChannel: 'websocket',
+    p2p: { enabled: true },
+    startAudioMuted: 10,
+    startVideoMuted: 10
+});
+```
+
+### Configuration Options
+
+From `JitsiConference.ts:84-151`:
+
+<CodeGroup>
+```typescript Configuration Interface
+interface IConferenceOptions {
+    config: {
+        // P2P Configuration
+        p2p?: {
+            enabled?: boolean;
+            backToP2PDelay?: number;              // Delay before switching back to P2P
+            codecPreferenceOrder?: string[];       // Codec preference for P2P
+            disabledCodec?: string;               // Codec to disable
+            preferredCodec?: string;              // Preferred video codec
+            screenshareCodec?: string;            // Codec for screenshare
+        };
+        
+        // Video Quality
+        videoQuality?: {
+            enableAdaptiveMode?: boolean;          // Enable adaptive quality
+            codecPreferenceOrder?: string[];       // Preferred codec order
+            disabledCodec?: string;
+            preferredCodec?: string;
+            screenshareCodec?: string;
+        };
+        
+        // Conference Settings  
+        channelLastN?: number;                    // Number of video streams to receive (-1 for all)
+        startAudioMuted?: number;                 // Auto-mute audio for Nth+ participant
+        startVideoMuted?: number;                 // Auto-mute video for Nth+ participant
+        startSilent?: boolean;                    // Join without audio
+        
+        // Statistics
+        statisticsId?: string;                    // User ID for statistics
+        statisticsDisplayName?: string;           // Display name for statistics
+        confID?: string;                          // Conference ID
+        applicationName?: string;                 // Application name
+        
+        // Advanced
+        e2eping?: { enabled?: boolean; };         // Enable E2E ping
+        enableNoAudioDetection?: boolean;         // Detect no audio input
+        enableNoisyMicDetection?: boolean;        // Detect noisy microphone
+        enableTalkWhileMuted?: boolean;           // Detect talk while muted
+        disableAudioLevels?: boolean;             // Disable audio level monitoring
+    };
+    connection: JitsiConnection;
+    name: string;
+}
+```
+</CodeGroup>
+
+<Info>
+Room names must be lowercase. The JitsiConference constructor validates this and throws an error for invalid names.
+</Info>
+
+## Conference Lifecycle
+
+### Joining a Conference
+
+```typescript
+// Join the conference
+await conference.join(password?);
+```
+
+When joining succeeds, the `CONFERENCE_JOINED` event is fired:
+
+```typescript
+conference.on(JitsiConferenceEvents.CONFERENCE_JOINED, () => {
+    console.log('Successfully joined conference');
+});
+```
+
+### Leaving a Conference
+
+```typescript
+// Leave the conference
+await conference.leave();
+```
+
+The `CONFERENCE_LEFT` event is fired when leaving:
+
+```typescript
+conference.on(JitsiConferenceEvents.CONFERENCE_LEFT, () => {
+    console.log('Left conference');
+});
+```
+
+## Conference Events
+
+All conference events are defined in `JitsiConferenceEvents.ts`. Here are the most important ones:
+
+### Core Lifecycle Events
+
+| Event | Parameters | Description |
+|-------|-----------|-------------|
+| `CONFERENCE_JOINED` | None | Conference successfully joined |
+| `CONFERENCE_LEFT` | None | Conference left |
+| `CONFERENCE_FAILED` | error, ... | Conference failed to join |
+| `CONFERENCE_ERROR` | error | Conference error occurred |
+
+### Participant Events  
+
+| Event | Parameters | Description |
+|-------|-----------|-------------|
+| `USER_JOINED` | id, participant | Remote participant joined |
+| `USER_LEFT` | id, participant | Remote participant left |
+| `USER_ROLE_CHANGED` | id, role | Participant role changed |
+| `USER_STATUS_CHANGED` | id, status | Participant status changed |
+| `DISPLAY_NAME_CHANGED` | id, displayName | Display name changed |
+| `DOMINANT_SPEAKER_CHANGED` | id | Dominant speaker changed |
+
+From `JitsiConferenceEvents.ts:445-457`:
+
+```typescript
+/**
+ * A new user joined the conference.
+ */
+USER_JOINED = 'conference.userJoined',
+
+/**
+ * A user has left the conference.
+ */
+USER_LEFT = 'conference.userLeft',
+
+/**
+ * User role changed.
+ */
+USER_ROLE_CHANGED = 'conference.roleChanged',
+```
+
+### Track Events
+
+| Event | Parameters | Description |
+|-------|-----------|-------------|
+| `TRACK_ADDED` | track | New media track added |
+| `TRACK_REMOVED` | track | Media track removed |
+| `TRACK_MUTE_CHANGED` | track, participant | Track mute status changed |
+| `TRACK_AUDIO_LEVEL_CHANGED` | participantId, audioLevel | Audio level changed |
+
+From `JitsiConferenceEvents.ts:403-428`:
+
+```typescript
+/**
+ * A new media track was added to the conference.
+ * @param {JitsiTrack} track the added JitsiTrack
+ */
+TRACK_ADDED = 'conference.trackAdded',
+
+/**
+ * Audio levels of a media track (attached to the conference) was changed.
+ */
+TRACK_AUDIO_LEVEL_CHANGED = 'conference.audioLevelsChanged',
+
+/**
+ * A media track (attached to the conference) mute status was changed.
+ * @param {JitsiParticipant|null} the participant that initiated the mute if it is a remote mute.
+ */
+TRACK_MUTE_CHANGED = 'conference.trackMuteChanged',
+
+/**
+ * The media track was removed from the conference.
+ * @param {JitsiTrack} track the removed JitsiTrack
+ */
+TRACK_REMOVED = 'conference.trackRemoved',
+```
+
+### Connection Events
+
+| Event | Parameters | Description |
+|-------|-----------|-------------|
+| `CONNECTION_ESTABLISHED` | None | ICE connection established |
+| `CONNECTION_INTERRUPTED` | None | ICE connection interrupted |
+| `CONNECTION_RESTORED` | None | ICE connection restored |
+| `P2P_STATUS` | conference, isP2P | P2P mode status changed |
+
+From `JitsiConferenceEvents.ts:134-151`:
+
+```typescript
+/**
+ * Indicates that the connection to the conference has been established
+ * XXX This is currently fired when the *ICE* connection enters 'connected' state for the first time.
+ */
+CONNECTION_ESTABLISHED = 'conference.connectionEstablished',
+
+/**
+ * Indicates that the connection to the conference has been interrupted
+ * XXX This is currently fired when the *ICE* connection is interrupted.
+ */
+CONNECTION_INTERRUPTED = 'conference.connectionInterrupted',
+
+/**
+ * Indicates that the connection to the conference has been restored.
+ * XXX This is currently fired when the *ICE* connection is restored.
+ */
+CONNECTION_RESTORED = 'conference.connectionRestored',
+```
+
+### Advanced Events
+
+| Event | Description |
+|-------|-------------|
+| `TALK_WHILE_MUTED` | Local user talking while muted |
+| `NO_AUDIO_INPUT` | No audio input detected |
+| `NOISY_MIC` | Noisy microphone detected |
+| `KICKED` | Participant was kicked |
+| `LOCK_STATE_CHANGED` | Room lock state changed |
+| `RECORDER_STATE_CHANGED` | Recording state changed |
+| `TRANSCRIPTION_STATUS_CHANGED` | Transcription status changed |
+
+## Participant Management
+
+### Getting Participants
+
+```typescript
+// Get all participants (excluding local)
+const participants = conference.getParticipants();
+
+// Get participant by ID  
+const participant = conference.getParticipantById(participantId);
+
+// Get participant count
+const count = conference.getParticipantCount();
+
+// Get local participant ID
+const myId = conference.myUserId();
+```
+
+From `JitsiConference.ts:292-367`, the participants are stored in a Map:
+
+```typescript
+/**
+ * List of all the participants in the conference.
+ * @type {Map<string, JitsiParticipant>}
+ */
+this.participants = new Map();
+```
+
+### Kicking Participants
+
+Moderators can kick participants:
+
+```typescript
+await conference.kickParticipant(participantId, reason);
+```
+
+### Muting Participants
+
+Moderators can mute participants:
+
+```typescript
+// Mute participant's audio
+await conference.muteParticipant(participantId, MediaType.AUDIO);
+
+// Mute participant's video
+await conference.muteParticipant(participantId, MediaType.VIDEO);
+```
+
+## Track Management
+
+### Adding Local Tracks
+
+```typescript
+const localTracks = await JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video']
+});
+
+for (const track of localTracks) {
+    await conference.addTrack(track);
+}
+```
+
+The `TRACK_ADDED` event fires for each added track.
+
+### Removing Local Tracks
+
+```typescript
+await conference.removeTrack(localTrack);
+```
+
+The `TRACK_REMOVED` event fires when a track is removed.
+
+### Replacing Tracks
+
+```typescript
+// Replace a track (e.g., switch camera)
+await conference.replaceTrack(oldTrack, newTrack);
+```
+
+### Getting Tracks
+
+```typescript
+// Get all local tracks
+const localTracks = conference.getLocalTracks();
+
+// Get local tracks by media type
+const audioTracks = conference.getLocalTracks(MediaType.AUDIO);
+const videoTracks = conference.getLocalTracks(MediaType.VIDEO);
+```
+
+## Conference Properties
+
+From `JitsiConference.ts:158-164`:
+
+```typescript
+interface IConferenceProperties {
+    'audio-limit-reached'?: string;
+    'bridge-count'?: string;
+    'video-limit-reached'?: string;
+    'visitor-codecs'?: string;
+    'visitor-count'?: number;
+}
+```
+
+Conference properties are maintained by Jicofo and accessible via:
+
+```typescript
+const properties = conference.getProperties();
+```
+
+These properties include information about bridge count, sender limits, and visitor support.
+
+## P2P and JVB Modes
+
+The conference can operate in two modes:
+
+**Peer-to-Peer (P2P)**:
+- Direct connection between two participants
+- Lower latency, better quality for 1-on-1 calls
+- Automatically enabled when configured and only 2 participants present
+
+**Jitsi Videobridge (JVB)**:
+- Multi-party conferencing through the bridge
+- Used for 3+ participants
+- Supports advanced features like simulcast
+
+From `JitsiConference.ts:461-467`:
+
+```typescript
+/**
+ * Flag set to <tt>true</tt> when P2P session has been established
+ * and this conference is currently in the peer to peer mode.
+ * @type {boolean}
+ */
+this.p2p = false;
+```
+
+Monitor P2P status:
+
+```typescript
+conference.on(JitsiConferenceEvents.P2P_STATUS, (conference, isP2P) => {
+    console.log('P2P mode:', isP2P);
+});
+```
+
+## Quality Control
+
+### LastN
+
+Control how many video streams to receive:
+
+```typescript
+// Receive video from 5 participants  
+conference.setLastN(5);
+
+// Receive video from all participants
+conference.setLastN(-1);
+
+// Get current LastN
+const lastN = conference.getLastN();
+```
+
+### Receiver Video Constraints
+
+Set constraints for received video:
+
+```typescript
+conference.setReceiverConstraints({
+    lastN: 5,
+    selectedEndpoints: ['endpoint1', 'endpoint2'],
+    onStageEndpoints: ['endpoint1'],
+    defaultConstraints: { maxHeight: 720 },
+    constraints: {
+        'endpoint1': { maxHeight: 1080 }
+    }
+});
+```
+
+## Room Management
+
+### Locking the Room
+
+```typescript
+// Lock with password
+await conference.lock(password);
+
+// Unlock
+await conference.lock();
+
+// Check lock state
+const isLocked = conference.lock();
+```
+
+### Subject
+
+Set or get the room subject:
+
+```typescript
+// Set subject
+conference.setSubject('Team Standup Meeting');
+
+// Get subject  
+const subject = conference.getSubject();
+```
+
+## Advanced Features
+
+### Recording
+
+```typescript
+// Start recording
+await conference.startRecording({
+    mode: 'file',  // or 'stream'
+    appData: JSON.stringify({ customData: 'value' })
+});
+
+// Stop recording
+await conference.stopRecording(sessionID);
+
+// Listen for recording state
+conference.on(JitsiConferenceEvents.RECORDER_STATE_CHANGED, (session) => {
+    console.log('Recording state:', session.getStatus());
+});
+```
+
+### Transcription
+
+```typescript
+// Start transcription
+conference.setLocalParticipantProperty('transcription_language', 'en-US');
+```
+
+### E2EE (End-to-End Encryption)
+
+From `JitsiConference.ts:488-492`:
+
+```typescript
+if (this.isE2EESupported()) {
+    logger.info('End-to-End Encryption is supported');
+    this._e2eEncryption = new E2EEncryption(this);
+}
+```
+
+Check E2EE support:
+
+```typescript
+if (conference.isE2EESupported()) {
+    // Enable E2EE
+    conference.toggleE2EE(true);
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Handle All Lifecycle Events">
+    Always handle conference lifecycle events:
+
+    ```typescript
+    conference.on(JitsiConferenceEvents.CONFERENCE_JOINED, () => {
+        // Add local tracks
+    });
+
+    conference.on(JitsiConferenceEvents.CONFERENCE_FAILED, (error) => {
+        // Handle failure, show error to user
+    });
+
+    conference.on(JitsiConferenceEvents.CONFERENCE_LEFT, () => {
+        // Clean up resources
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Manage Track Lifecycle">
+    Properly manage track addition and removal:
+
+    ```typescript
+    // Add tracks after joining
+    conference.on(JitsiConferenceEvents.CONFERENCE_JOINED, async () => {
+        const tracks = await JitsiMeetJS.createLocalTracks({ devices: ['audio', 'video'] });
+        for (const track of tracks) {
+            await conference.addTrack(track);
+        }
+    });
+
+    // Remove tracks before leaving
+    const tracks = conference.getLocalTracks();
+    for (const track of tracks) {
+        await conference.removeTrack(track);
+        track.dispose();
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Remote Tracks">
+    Listen for remote track events:
+
+    ```typescript
+    conference.on(JitsiConferenceEvents.TRACK_ADDED, (track) => {
+        if (track.isLocal()) return;
+        
+        const participantId = track.getParticipantId();
+        const videoElement = document.getElementById(`video-${participantId}`);
+        track.attach(videoElement);
+    });
+
+    conference.on(JitsiConferenceEvents.TRACK_REMOVED, (track) => {
+        track.detach();
+        track.dispose();
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="JitsiParticipant" icon="user" href="/concepts/participants">
+    Learn about participant properties and management
+  </Card>
+  <Card title="Media Tracks" icon="video" href="/concepts/tracks">
+    Explore local and remote track handling
+  </Card>
+  <Card title="JitsiConnection" icon="plug" href="/concepts/connections">
+    Understand XMPP connections
+  </Card>
+</CardGroup>

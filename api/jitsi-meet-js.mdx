@@ -1,0 +1,524 @@
+---
+title: JitsiMeetJS
+description: Main API entry point for lib-jitsi-meet
+---
+
+The `JitsiMeetJS` object is the main entry point for the lib-jitsi-meet library. It provides methods for initializing the library, creating connections, conferences, and managing local tracks.
+
+## Initialization
+
+### init()
+
+Initializes the library. This method must be called before using any other library functionality.
+
+```javascript
+JitsiMeetJS.init(options);
+```
+
+<ParamField path="options" type="object">
+  Configuration options for the library
+
+  <Expandable title="properties">
+    <ParamField path="enableAnalyticsLogging" type="boolean" default="false">
+      Enable analytics logging
+    </ParamField>
+
+    <ParamField path="externalStorage" type="Storage">
+      External storage implementation for settings
+    </ParamField>
+
+    <ParamField path="disableThirdPartyRequests" type="boolean" default="false">
+      Disable all third-party requests
+    </ParamField>
+
+    <ParamField path="disableAudioLevels" type="boolean" default="false">
+      Disable audio level measurements
+    </ParamField>
+
+    <ParamField path="audioLevelsInterval" type="number">
+      Interval for audio level events in milliseconds
+    </ParamField>
+
+    <ParamField path="pcStatsInterval" type="number">
+      Interval for peer connection statistics collection
+    </ParamField>
+
+    <ParamField path="enableWindowOnErrorHandler" type="boolean" default="false">
+      Enable window.onerror handler for error reporting
+    </ParamField>
+
+    <ParamField path="desktopSharingSources" type="Array<'screen' | 'window'>">
+      Desktop sharing sources to enable
+    </ParamField>
+
+    <ParamField path="flags" type="object">
+      Feature flags
+      <Expandable title="properties">
+        <ParamField path="runInLiteMode" type="boolean">
+          Enable lite mode for reduced bandwidth
+        </ParamField>
+        <ParamField path="ssrcRewritingEnabled" type="boolean">
+          Enable SSRC rewriting
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="analytics" type="object">
+      Analytics configuration
+      <Expandable title="properties">
+        <ParamField path="rtcstatsStoreLogs" type="boolean">
+          Enable RTCStats log storage
+        </ParamField>
+        <ParamField path="rtcstatsLogFlushSizeBytes" type="number">
+          Log flush size in bytes
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Connection & Conference
+
+### JitsiConnection
+
+Reference to the [JitsiConnection](/api/jitsi-connection) class constructor.
+
+```javascript
+const connection = new JitsiMeetJS.JitsiConnection(appId, token, options);
+```
+
+### joinConference()
+
+Simplified method to join a conference with minimal configuration. Automatically handles connection and conference setup.
+
+```javascript
+const conference = await JitsiMeetJS.joinConference(
+  roomName,
+  appId,
+  token,
+  options
+);
+```
+
+<ParamField path="roomName" type="string" required>
+  The name of the conference room
+</ParamField>
+
+<ParamField path="appId" type="string" default="''">
+  Application ID (tenant). For JaaS deployments, use your `vpaas-magic-cookie-*` app ID
+</ParamField>
+
+<ParamField path="token" type="string | null" default="null">
+  JWT token for authentication
+</ParamField>
+
+<ParamField path="options" type="object">
+  Configuration options
+
+  <Expandable title="properties">
+    <ParamField path="connectionOptions" type="object">
+      Options passed to JitsiConnection. See [JitsiConnection](/api/jitsi-connection)
+    </ParamField>
+
+    <ParamField path="conferenceOptions" type="object">
+      Options for the conference. See [JitsiConference](/api/jitsi-conference)
+    </ParamField>
+
+    <ParamField path="tracks" type="Array<JitsiLocalTrack>">
+      Local tracks to add to the conference
+    </ParamField>
+
+    <ParamField path="jaas" type="object">
+      JaaS-specific options
+      <Expandable title="properties">
+        <ParamField path="useStaging" type="boolean" default="false">
+          Use JaaS staging environment
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="conference" type="Promise<JitsiConference>">
+  Promise that resolves to a JitsiConference instance when joined successfully
+</ResponseField>
+
+## Local Tracks
+
+### createLocalTracks()
+
+Creates local media tracks (audio and/or video).
+
+```javascript
+const tracks = await JitsiMeetJS.createLocalTracks(options);
+```
+
+<ParamField path="options" type="object">
+  Track creation options
+
+  <Expandable title="properties">
+    <ParamField path="devices" type="Array<'audio' | 'video' | 'desktop'>">
+      Array of device types to capture
+    </ParamField>
+
+    <ParamField path="resolution" type="string">
+      Video resolution (e.g., '720', '1080', '4k')
+    </ParamField>
+
+    <ParamField path="cameraDeviceId" type="string">
+      ID of the camera device to use
+    </ParamField>
+
+    <ParamField path="micDeviceId" type="string">
+      ID of the microphone device to use
+    </ParamField>
+
+    <ParamField path="facingMode" type="'user' | 'environment'">
+      Camera facing mode (mobile)
+    </ParamField>
+
+    <ParamField path="effects" type="Array">
+      Array of effects to apply to tracks
+    </ParamField>
+
+    <ParamField path="fireSlowPromiseEvent" type="boolean" default="true">
+      Fire events for slow getUserMedia calls
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="tracks" type="Promise<Array<JitsiLocalTrack>>">
+  Promise that resolves to an array of created local tracks
+</ResponseField>
+
+### createLocalTracksFromMediaStreams()
+
+Manually creates JitsiLocalTrack instances from existing MediaStream objects.
+
+```javascript
+const tracks = JitsiMeetJS.createLocalTracksFromMediaStreams(tracksInfo);
+```
+
+<ParamField path="tracksInfo" type="Array<object>" required>
+  Array of track information objects
+
+  <Expandable title="properties">
+    <ParamField path="stream" type="MediaStream" required>
+      The MediaStream containing the track
+    </ParamField>
+
+    <ParamField path="track" type="MediaStreamTrack" required>
+      The MediaStreamTrack to wrap
+    </ParamField>
+
+    <ParamField path="mediaType" type="'audio' | 'video'" required>
+      The media type of the track
+    </ParamField>
+
+    <ParamField path="sourceType" type="string" required>
+      The source type (e.g., 'camera', 'desktop')
+    </ParamField>
+
+    <ParamField path="videoType" type="'camera' | 'desktop'">
+      The video type (for video tracks)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="tracks" type="Array<JitsiLocalTrack>">
+  Array of created local tracks
+</ResponseField>
+
+## Media Devices
+
+### mediaDevices
+
+Access to the JitsiMediaDevices API for enumerating and managing media devices.
+
+```javascript
+const devices = await JitsiMeetJS.mediaDevices.enumerateDevices();
+```
+
+### isMultipleAudioInputSupported()
+
+Checks if the current environment supports multiple simultaneous audio inputs.
+
+```javascript
+const supported = JitsiMeetJS.isMultipleAudioInputSupported();
+```
+
+<ResponseField name="supported" type="boolean">
+  `true` if multiple audio inputs are supported
+</ResponseField>
+
+### getActiveAudioDevice()
+
+Detects which audio device currently has an active audio signal.
+
+```javascript
+const activeDevice = await JitsiMeetJS.getActiveAudioDevice();
+```
+
+<ResponseField name="activeDevice" type="object">
+  Object containing information about the active audio device
+</ResponseField>
+
+## Utility Methods
+
+### isWebRtcSupported()
+
+Checks if WebRTC is supported in the current environment.
+
+```javascript
+const supported = JitsiMeetJS.isWebRtcSupported();
+```
+
+<ResponseField name="supported" type="boolean">
+  `true` if WebRTC is supported
+</ResponseField>
+
+### isDesktopSharingEnabled()
+
+Checks if desktop sharing is enabled and supported.
+
+```javascript
+const enabled = JitsiMeetJS.isDesktopSharingEnabled();
+```
+
+<ResponseField name="enabled" type="boolean">
+  `true` if desktop sharing is available
+</ResponseField>
+
+### setLogLevel()
+
+Sets the logging level for the library.
+
+```javascript
+JitsiMeetJS.setLogLevel(JitsiMeetJS.logLevels.ERROR);
+```
+
+<ParamField path="level" type="string" required>
+  Log level: `TRACE`, `DEBUG`, `INFO`, `LOG`, `WARN`, `ERROR`
+</ParamField>
+
+### setLogLevelById()
+
+Sets the log level for a specific logger by ID.
+
+```javascript
+JitsiMeetJS.setLogLevelById(JitsiMeetJS.logLevels.DEBUG, 'modules/RTC/RTC.js');
+```
+
+<ParamField path="level" type="string" required>
+  Log level to set
+</ParamField>
+
+<ParamField path="id" type="string" required>
+  Logger ID (usually the module path)
+</ParamField>
+
+### addGlobalLogTransport()
+
+Adds a custom log transport to receive all log messages.
+
+```javascript
+JitsiMeetJS.addGlobalLogTransport((level, msg, context) => {
+  console.log(`[${level}] ${msg}`);
+});
+```
+
+<ParamField path="transport" type="function" required>
+  Function that receives log messages: `(level: string, msg: string, context: object) => void`
+</ParamField>
+
+### removeGlobalLogTransport()
+
+Removes a previously added log transport.
+
+```javascript
+JitsiMeetJS.removeGlobalLogTransport(transportFunction);
+```
+
+<ParamField path="transport" type="function" required>
+  The transport function to remove
+</ParamField>
+
+## Audio Processing
+
+### createAudioMixer()
+
+Creates an AudioMixer for combining multiple audio streams.
+
+```javascript
+const mixer = JitsiMeetJS.createAudioMixer();
+```
+
+<ResponseField name="mixer" type="AudioMixer">
+  AudioMixer instance for mixing audio streams
+</ResponseField>
+
+### createTrackVADEmitter()
+
+Creates a voice activity detection (VAD) emitter for an audio track.
+
+```javascript
+const vadEmitter = await JitsiMeetJS.createTrackVADEmitter(
+  localAudioDeviceId,
+  sampleRate,
+  vadProcessor
+);
+```
+
+<ParamField path="localAudioDeviceId" type="string" required>
+  Target local audio device ID
+</ParamField>
+
+<ParamField path="sampleRate" type="number" required>
+  Sample rate for VAD processing (256, 512, 1024, 4096, 8192, or 16384)
+</ParamField>
+
+<ParamField path="vadProcessor" type="object" required>
+  VAD processor implementing:
+  - `getSampleLength(): number`
+  - `getRequiredPCMFrequency(): number`
+  - `calculateAudioFrameVAD(pcmSample: Float32Array): number`
+</ParamField>
+
+<ResponseField name="emitter" type="Promise<TrackVADEmitter>">
+  Promise resolving to a TrackVADEmitter instance
+</ResponseField>
+
+## Network & Diagnostics
+
+### setNetworkInfo()
+
+Informs the library about the current network status.
+
+```javascript
+JitsiMeetJS.setNetworkInfo({ isOnline: true });
+```
+
+<ParamField path="state" type="object" required>
+  <Expandable title="properties">
+    <ParamField path="isOnline" type="boolean" required>
+      `true` if internet connectivity is available
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### runPreCallTest()
+
+Runs a pre-call network test to check connectivity and quality.
+
+```javascript
+const results = await JitsiMeetJS.runPreCallTest(iceServers);
+```
+
+<ParamField path="iceServers" type="Array<object>" required>
+  Array of ICE server configurations
+
+  <Expandable title="properties">
+    <ParamField path="urls" type="string | Array<string>" required>
+      STUN/TURN server URLs
+    </ParamField>
+
+    <ParamField path="username" type="string">
+      Username for TURN server
+    </ParamField>
+
+    <ParamField path="credential" type="string">
+      Credential for TURN server
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="results" type="Promise<object>">
+  Promise resolving to test results including network quality metrics
+</ResponseField>
+
+## Constants and Events
+
+### events
+
+Event name constants for the library:
+
+```javascript
+JitsiMeetJS.events.conference.CONFERENCE_JOINED
+JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED
+JitsiMeetJS.events.track.TRACK_MUTE_CHANGED
+JitsiMeetJS.events.mediaDevices.DEVICE_LIST_CHANGED
+```
+
+- `conference` - [JitsiConferenceEvents](/api/jitsi-conference#events)
+- `connection` - JitsiConnectionEvents
+- `track` - JitsiTrackEvents
+- `mediaDevices` - JitsiMediaDevicesEvents
+- `connectionQuality` - ConnectionQualityEvents
+- `detection` - DetectionEvents
+- `e2eping` - E2ePingEvents
+
+### errors
+
+Error constants for the library:
+
+```javascript
+JitsiMeetJS.errors.conference
+JitsiMeetJS.errors.connection
+JitsiMeetJS.errors.track
+```
+
+### constants
+
+Library constants:
+
+```javascript
+JitsiMeetJS.constants.recording
+JitsiMeetJS.constants.sipVideoGW
+JitsiMeetJS.constants.trackStreamingStatus
+JitsiMeetJS.constants.transcriptionStatus
+```
+
+### logLevels
+
+Available log levels:
+
+```javascript
+JitsiMeetJS.logLevels.TRACE
+JitsiMeetJS.logLevels.DEBUG
+JitsiMeetJS.logLevels.INFO
+JitsiMeetJS.logLevels.LOG
+JitsiMeetJS.logLevels.WARN
+JitsiMeetJS.logLevels.ERROR
+```
+
+## RTCStats
+
+### rtcstats
+
+RTCStats integration for WebRTC debugging:
+
+```javascript
+// Check if trace is available
+if (JitsiMeetJS.rtcstats.isTraceAvailable()) {
+  // Send identity data
+  JitsiMeetJS.rtcstats.sendIdentityEntry({ userId: '123' });
+  
+  // Send custom stats
+  JitsiMeetJS.rtcstats.sendStatsEntry('customStat', { value: 42 });
+  
+  // Listen to events
+  JitsiMeetJS.rtcstats.on('connected', () => {
+    console.log('RTCStats connected');
+  });
+}
+```
+
+## Version
+
+### version
+
+The library version (git commit hash):
+
+```javascript
+console.log(JitsiMeetJS.version);
+```

@@ -1,0 +1,515 @@
+---
+title: Network Optimization
+description: ICE handling, connection quality monitoring, and network resilience in lib-jitsi-meet
+---
+
+# Network Optimization
+
+lib-jitsi-meet implements robust network handling including ICE connection management, network quality monitoring, and automatic recovery mechanisms.
+
+## ICE Failed Handling
+
+The `IceFailedHandling` class manages recovery from ICE connection failures on the JVB media session.
+
+### Architecture
+
+```typescript
+export default class IceFailedHandling {
+    private _conference: JitsiConference;
+    private _canceled: boolean = false;
+    private _iceFailedTimeout?: number;
+    
+    constructor(conference: JitsiConference) {
+        this._conference = conference;
+    }
+}
+```
+
+Source: `modules/connectivity/IceFailedHandling.ts:16-27`
+
+### Recovery Strategy
+
+When ICE fails, lib-jitsi-meet:
+1. Pings XMPP server to verify internet connectivity (65s timeout)
+2. Waits 2 seconds for ICE to recover
+3. If still failed, sends session-terminate to Jicofo
+4. Jicofo re-invites the participant to recreate the session
+
+Source: `modules/connectivity/IceFailedHandling.ts:10-14`
+
+### Implementation
+
+**Starting Recovery**
+```typescript
+start(): void {
+    // Using xmpp.ping handles both XMPP disconnection and internet offline cases.
+    // sendIQ2 waits patiently for reconnection.
+    // 
+    // 65 second timeout: no chance for XMPP to recover after 65s of no communication.
+    // Resume attempts will fail with 'item-not-found' error.
+    this._conference.xmpp.ping(65000).then(
+        () => {
+            if (!this._canceled) {
+                // Wait 2 seconds for ICE to recover after internet comes back
+                this._iceFailedTimeout = window.setTimeout(() => {
+                    this._iceFailedTimeout = undefined;
+                    this._actOnIceFailed();
+                }, 2000);
+            }
+        },
+        error => {
+            logger.error('PING error/timeout - not sending ICE failed', error);
+        }
+    );
+}
+```
+
+Source: `modules/connectivity/IceFailedHandling.ts:63-85`
+
+**Taking Action on Failure**
+```typescript
+private _actOnIceFailed(): void {
+    if (!this._conference.room) {
+        return;
+    }
+    
+    const jvbConnection = this._conference.jvbJingleSession;
+    const jvbConnIceState = jvbConnection?.getIceConnectionState();
+    
+    if (!jvbConnection) {
+        logger.warn('Not sending ICE failed - no JVB connection');
+    } else if (jvbConnIceState === 'connected') {
+        logger.info('ICE connection restored - not sending ICE failed');
+    } else {
+        logger.info(`Sending ICE failed - connection did not recover, ICE state: ${jvbConnIceState}`);
+        RTCStats.sendStatsEntry(RTCStatsEvents.JVB_ICE_RESTARTED_EVENT);
+        this._conference._stopJvbSession({
+            reason: 'connectivity-error',
+            reasonDescription: 'ICE FAILED',
+            requestRestart: true,
+            sendSessionTerminate: true
+        });
+    }
+}
+```
+
+Source: `modules/connectivity/IceFailedHandling.ts:35-57`
+
+**Canceling Recovery**
+```typescript
+cancel(): void {
+    this._canceled = true;
+    window.clearTimeout(this._iceFailedTimeout);
+}
+```
+
+Source: `modules/connectivity/IceFailedHandling.ts:91-94`
+
+<Warning>
+**65 Second XMPP Timeout**
+
+The 65-second ping timeout is intentional. XMPP cannot recover after 65 seconds without server communication - the server will reject resume attempts with `item-not-found` error.
+
+Do not reduce this timeout or recovery may fail.
+
+Source: `modules/connectivity/IceFailedHandling.ts:70-72`
+</Warning>
+
+## Network Info Module
+
+The `NetworkInfo` module tracks online/offline internet status.
+
+### Architecture
+
+```typescript
+export interface ICurrentNetworkInfo {
+    isOnline: boolean;
+}
+
+export class NetworkInfo extends Listenable {
+    private _current: ICurrentNetworkInfo;
+    
+    constructor() {
+        super();
+        this._current = {
+            isOnline: true  // Default to online
+        };
+    }
+}
+```
+
+Source: `modules/connectivity/NetworkInfo.ts:9-31`
+
+### Usage
+
+**Updating Network Status**
+```typescript
+updateNetworkInfo({ isOnline }: { isOnline: boolean; }): void {
+    logger.debug('updateNetworkInfo', { isOnline });
+    this._current = {
+        isOnline: isOnline === true
+    };
+    this.eventEmitter.emit(NETWORK_INFO_EVENT, this._current);
+}
+```
+
+Source: `modules/connectivity/NetworkInfo.ts:40-46`
+
+**Checking Online Status**
+```typescript
+isOnline(): boolean {
+    return this._current.isOnline === true;
+}
+```
+
+Source: `modules/connectivity/NetworkInfo.ts:55-57`
+
+### Integration
+
+Applications using lib-jitsi-meet should wire network status:
+
+```javascript
+import { JitsiMeetJS } from 'lib-jitsi-meet';
+
+// Browser API
+window.addEventListener('online', () => {
+    JitsiMeetJS.setNetworkInfo({ isOnline: true });
+});
+
+window.addEventListener('offline', () => {
+    JitsiMeetJS.setNetworkInfo({ isOnline: false });
+});
+
+// React Native NetInfo
+import NetInfo from '@react-native-community/netinfo';
+
+NetInfo.addEventListener(state => {
+    JitsiMeetJS.setNetworkInfo({ isOnline: state.isConnected });
+});
+```
+
+Source: `modules/connectivity/NetworkInfo.ts:14-18`
+
+<Warning>
+**Default is Online**
+
+By default, lib-jitsi-meet assumes the network is online:
+
+```typescript
+this._current = {
+    isOnline: true
+};
+```
+
+Applications must wire the network status for lib-jitsi-meet to properly handle offline scenarios. Without this, operations will fail gracefully but without optimization.
+
+Source: `modules/connectivity/NetworkInfo.ts:28-30, 48-56`
+</Warning>
+
+## Connection Quality
+
+The `ConnectionQuality` module monitors connection quality based on RTCStats.
+
+### Module Structure
+
+Source: modules/connectivity/ directory
+
+**Available Modules:**
+- `IceFailedHandling.ts` - ICE failure recovery
+- `NetworkInfo.ts` - Online/offline tracking
+- `ConnectionQuality.ts` - Quality monitoring
+- `TrackStreamingStatus.ts` - Track streaming state
+
+## ICE Connection States
+
+lib-jitsi-meet normalizes ICE connection states across browsers:
+
+```typescript
+getConnectionState(): RTCIceConnectionState {
+    const state = this.peerconnection.iceConnectionState;
+    
+    // Normalize 'completed' to 'connected'
+    if (state === 'completed') {
+        return 'connected';
+    }
+    
+    return state;
+}
+```
+
+The P2P connection may report "completed" state, but this is normalized to "connected" for consistency.
+
+Source: modules/RTC/TraceablePeerConnection.ts:1254-1262
+
+### ICE State Transitions
+
+```
+new → checking → connected → completed
+                ↓
+             failed → disconnected → closed
+```
+
+**Key States:**
+- **new**: ICE agent gathering addresses
+- **checking**: ICE agent checking pairs
+- **connected**: ICE agent found working connection
+- **completed**: ICE agent finished (normalized to connected)
+- **failed**: ICE agent exhausted all candidates
+- **disconnected**: ICE agent lost connection
+- **closed**: ICE agent shut down
+
+## DTLS Transport
+
+lib-jitsi-meet monitors the DTLS transport for the peer connection:
+
+```typescript
+private _initializeDtlsTransport(): void {
+    // Assume single bundled transport
+    if (!this.peerconnection.getSenders || this._dtlsTransport) {
+        return;
+    }
+    
+    const senders = this.peerconnection.getSenders();
+    
+    if (senders.length !== 0 && senders[0].transport) {
+        this._dtlsTransport = senders[0].transport;
+        
+        this._dtlsTransport.onerror = error => {
+            logger.error(`${this} DtlsTransport error: ${error}`);
+        };
+        
+        this._dtlsTransport.onstatechange = () => {
+            this.trace('dtlsTransport.onstatechange', this._dtlsTransport.state);
+        };
+    }
+}
+```
+
+All streams are bundled on a single transport for efficiency.
+
+Source: modules/RTC/TraceablePeerConnection.ts:834-853
+
+## ICE Configuration
+
+lib-jitsi-meet supports separate ICE configurations for JVB and P2P:
+
+```javascript
+const iceConfig = {
+    jvb: {
+        iceServers: [
+            { urls: 'stun:stun.example.com:3478' },
+            {
+                urls: 'turn:turn.example.com:3478',
+                username: 'user',
+                credential: 'pass'
+            }
+        ],
+        iceTransportPolicy: 'all'  // or 'relay' to force TURN
+    },
+    p2p: {
+        iceServers: [
+            { urls: 'stun:stun.example.com:3478' }
+        ],
+        iceTransportPolicy: 'all'
+    }
+};
+```
+
+Source: CLAUDE.md:94
+
+### Force TURN Relay
+
+```javascript
+const options = {
+    // ...
+    forceTurnRelay: true  // Generate only relay candidates
+};
+```
+
+When enabled, the browser will only generate relay (TURN) candidates, ensuring all traffic goes through the TURN server.
+
+Source: modules/RTC/TraceablePeerConnection.ts:223
+
+## Network Resilience Best Practices
+
+### 1. Monitor ICE State
+
+```javascript
+pc.peerconnection.oniceconnectionstatechange = event => {
+    const state = pc.getConnectionState();
+    logger.info('ICE connection state:', state);
+    
+    if (state === 'failed') {
+        // Start recovery process
+        iceFailedHandling.start();
+    } else if (state === 'connected') {
+        // Cancel recovery if recovering
+        iceFailedHandling.cancel();
+    }
+};
+```
+
+### 2. Wire Network Status
+
+```javascript
+// Browser
+window.addEventListener('online', () => {
+    JitsiMeetJS.setNetworkInfo({ isOnline: true });
+});
+
+window.addEventListener('offline', () => {
+    JitsiMeetJS.setNetworkInfo({ isOnline: false });
+    
+    // Pause operations while offline
+    conference.pauseParticipantStats();
+});
+```
+
+### 3. Handle Reconnection
+
+```javascript
+room.on(JitsiConferenceEvents.CONNECTION_RESTORED, () => {
+    logger.info('Connection restored');
+    // Resume operations
+});
+
+room.on(JitsiConferenceEvents.CONNECTION_INTERRUPTED, () => {
+    logger.warn('Connection interrupted');
+    // Show warning to user
+});
+```
+
+### 4. Use Adaptive Bitrate
+
+```javascript
+// Let lib-jitsi-meet adapt to network conditions
+conference.setReceiverConstraints({
+    lastN: 5,          // Receive video from 5 participants
+    selectedSources: [], // Auto-select based on quality
+    onStageEndpoints: ['endpoint1'],
+    defaultConstraints: { maxHeight: 720 },
+    constraints: {
+        'endpoint1': { maxHeight: 1080 }  // High quality for on-stage
+    }
+});
+```
+
+### 5. Monitor Statistics
+
+```javascript
+conference.on(JitsiConferenceEvents.CONNECTION_STATS, stats => {
+    const { bitrate, packetLoss, jitter } = stats;
+    
+    if (packetLoss.upload > 10) {
+        logger.warn('High packet loss:', packetLoss.upload);
+        // Reduce quality or notify user
+    }
+    
+    if (bitrate.download < 500000) {
+        logger.warn('Low bandwidth:', bitrate.download);
+        // Reduce lastN or resolution
+    }
+});
+```
+
+## RTCStats Integration
+
+lib-jitsi-meet sends analytics events to rtcstats:
+
+```typescript
+RTCStats.sendStatsEntry(RTCStatsEvents.JVB_ICE_RESTARTED_EVENT);
+```
+
+This tracks ICE restarts for monitoring and debugging.
+
+Source: `modules/connectivity/IceFailedHandling.ts:4-5, 49`
+
+## Connectivity Modules
+
+Other connectivity-related modules:
+
+### TrackStreamingStatus
+
+Monitors whether tracks are actively streaming:
+- Tracks interruptions
+- Detects playback issues
+- Manages buffer state
+
+### ConnectionQuality
+
+Calculates connection quality score:
+- Based on RTCStats metrics
+- Packet loss, jitter, RTT
+- Audio/video quality indicators
+
+Source: modules/connectivity/ directory
+
+## Network Diagnostics
+
+### Enable Detailed Logging
+
+```javascript
+import { setLogLevel } from '@jitsi/logger';
+
+setLogLevel('connectivity:IceFailedHandling', 'debug');
+setLogLevel('connectivity:NetworkInfo', 'debug');
+```
+
+### Trace ICE Candidates
+
+```javascript
+pc.peerconnection.onicecandidate = event => {
+    if (event.candidate) {
+        logger.debug('ICE candidate:', event.candidate.candidate);
+    } else {
+        logger.debug('ICE gathering complete');
+    }
+};
+```
+
+### Monitor DTLS State
+
+```javascript
+if (pc._dtlsTransport) {
+    pc._dtlsTransport.onstatechange = () => {
+        logger.debug('DTLS state:', pc._dtlsTransport.state);
+    };
+}
+```
+
+## Performance Optimization
+
+### Reduce Signaling Overhead
+
+- Use JSON message encoding for large conferences
+- Batch source updates
+- Minimize presence updates
+
+### Optimize ICE Gathering
+
+```javascript
+const pcConfig = {
+    iceServers: [...],
+    iceCandidatePoolSize: 10,  // Pre-gather candidates
+    bundlePolicy: 'max-bundle', // Bundle all media
+    rtcpMuxPolicy: 'require'    // Multiplex RTCP
+};
+```
+
+### Enable ICE Restart
+
+```javascript
+conference.on(JitsiConferenceEvents.ICE_CONNECTION_STATE_CHANGED, (state) => {
+    if (state === 'failed') {
+        // Automatic restart via IceFailedHandling
+        // Or manual restart:
+        // conference.restartJvbSession();
+    }
+});
+```
+
+## Next Steps
+
+- [WebRTC Internals](/advanced/webrtc-internals) - Peer connection management
+- [XMPP Signaling](/advanced/xmpp-signaling) - Jingle protocol
+- [Browser Compatibility](/advanced/browser-compatibility) - Feature detection

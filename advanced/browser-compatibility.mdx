@@ -1,0 +1,592 @@
+---
+title: Browser Compatibility
+description: Browser detection, feature detection, and compatibility handling in lib-jitsi-meet
+---
+
+# Browser Compatibility
+
+lib-jitsi-meet uses the `BrowserCapabilities` class for browser detection and feature support checking, along with webrtc-adapter for polyfills.
+
+## BrowserCapabilities Class
+
+Extends `BrowserDetection` from `@jitsi/js-utils` with lib-jitsi-meet-specific capabilities.
+
+```typescript
+import BrowserDetection from '@jitsi/js-utils/browser-detection/BrowserDetection';
+
+export default class BrowserCapabilities extends BrowserDetection {
+    // lib-jitsi-meet specific methods
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:1, 22`
+
+## Minimum Browser Versions
+
+```typescript
+const MIN_REQUIRED_CHROME_VERSION = 72;
+const MIN_REQUIRED_FIREFOX_VERSION = 91;
+const MIN_REQUIRED_SAFARI_VERSION = 14;
+const MIN_REQUIRED_IOS_VERSION = 14;
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:4-7`
+
+### Version Detection
+
+**Safari Version**
+```typescript
+_getSafariVersion(): number {
+    if (this.isSafari()) {
+        return Number.parseInt(this.getVersion(), 10);
+    }
+    return -1;
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:41-47`
+
+**iOS Version**
+```typescript
+_getIOSVersion(): number {
+    if (this.isWebKitBased()) {
+        return Number.parseInt(this.getOSVersion(), 10);
+    }
+    return -1;
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:28-34`
+
+## Browser Support Checks
+
+### Overall Support
+
+```typescript
+isSupported(): boolean {
+    // Check for WebRTC APIs (some security extensions disable them)
+    if (typeof RTCPeerConnection === 'undefined'
+            || !navigator?.mediaDevices?.enumerateDevices 
+            || !navigator?.mediaDevices?.getUserMedia) {
+        return false;
+    }
+    
+    if (this.isSafari() && this._getSafariVersion() < MIN_REQUIRED_SAFARI_VERSION) {
+        return false;
+    }
+    
+    return (this.isChromiumBased() && this.isEngineVersionGreaterThan(MIN_REQUIRED_CHROME_VERSION - 1))
+        || (this.isFirefox() && this.isVersionGreaterThan(MIN_REQUIRED_FIREFOX_VERSION - 1))
+        || this.isReactNative()
+        || this.isWebKitBased();
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:101-116`
+
+### Platform-Specific Support
+
+**Android**
+```typescript
+isSupportedAndroidBrowser(): boolean {
+    return this.isChromiumBased() || this.isFirefox();
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:123-125`
+
+**iOS**
+```typescript
+isSupportedIOSBrowser(): boolean {
+    // After iPadOS 13, UA string conceals version and pretends to be macOS 10.15.7
+    if (!this.isSafari() && this.isWebKitBased() && this.getOSVersion() === FROZEN_MACOS_VERSION) {
+        return true;
+    }
+    
+    return this._getSafariVersion() >= MIN_REQUIRED_IOS_VERSION
+            || this._getIOSVersion() >= MIN_REQUIRED_IOS_VERSION;
+}
+```
+
+The iPad detection workaround is necessary because iPadOS 13+ masquerades as macOS in the user agent.
+
+Source: `modules/browser/BrowserCapabilities.ts:10-11, 132-140`
+
+## Mobile Detection
+
+```typescript
+isMobileDevice(): boolean {
+    return this.isAndroidBrowser() || this.isIosBrowser() || this.isReactNative();
+}
+
+isAndroidBrowser(): boolean {
+    return !this.isReactNative() && this.getOS() === 'Android';
+}
+
+isIosBrowser(): boolean {
+    return !this.isReactNative() && this.getOS() === 'iOS';
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:83-85, 65-67, 74-76`
+
+### Trusted Web App Detection
+
+```typescript
+isTwa(): boolean {
+    return 'matchMedia' in window && window.matchMedia('(display-mode:standalone)').matches;
+}
+```
+
+Detects if running as a Trusted Web App (Android).
+
+Source: `modules/browser/BrowserCapabilities.ts:92-94`
+
+## Codec Support
+
+### setCodecPreferences API
+
+```typescript
+supportsCodecPreferences(): boolean {
+    return Boolean('setCodecPreferences' in window.RTCRtpTransceiver?.prototype
+        && typeof window.RTCRtpReceiver?.getCapabilities !== 'undefined')
+        
+        // Safari bug: https://bugs.webkit.org/show_bug.cgi?id=215567
+        && !this.isWebKitBased()
+        
+        // Firefox freeze bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1917800
+        && !this.isFirefox();
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:178-189`
+
+### Codec Selection API
+
+```typescript
+supportsCodecSelectionAPI(): boolean {
+    return this.isChromiumBased() && this.isEngineVersionGreaterThan(125);
+}
+```
+
+Chrome 126+ supports changing codecs on encodings without renegotiation.
+
+Source: `modules/browser/BrowserCapabilities.ts:199-201`
+
+### VP9 Support
+
+```typescript
+supportsVP9(): boolean {
+    // Disabled on Firefox (simulcast disabled by default)
+    // Disabled on Safari (decoder/encoder issues)
+    return !(this.isWebKitBased() || this.isFirefox());
+}
+```
+
+See: https://bugs.webkit.org/show_bug.cgi?id=231074
+
+Source: `modules/browser/BrowserCapabilities.ts:276-281`
+
+### SVC Support
+
+```typescript
+supportsSVC(): boolean {
+    return !this.isFirefox();
+}
+```
+
+Scalable Video Coding is supported on all browsers except Firefox.
+
+Source: `modules/browser/BrowserCapabilities.ts:288-290`
+
+## Simulcast
+
+### SDP Munging for Simulcast
+
+```typescript
+usesSdpMungingForSimulcast(): boolean {
+    return this.isChromiumBased() || this.isReactNative() || this.isWebKitBased();
+}
+```
+
+Chrome, Safari, and React Native use SDP munging. Firefox uses RIDs/MIDs.
+
+Source: `modules/browser/BrowserCapabilities.ts:297-299`
+
+### RIDs for Simulcast
+
+```typescript
+usesRidsForSimulcast(): boolean {
+    return false;  // Currently unused
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:307-309`
+
+### Scalability Mode API
+
+```typescript
+supportsScalabilityModeAPI(): boolean {
+    return this.isChromiumBased() && this.isEngineVersionGreaterThan(112);
+}
+```
+
+Chrome 113+ supports the Scalability Mode API for VP9/AV1 simulcast and full SVC.
+
+Source: `modules/browser/BrowserCapabilities.ts:255-257`
+
+## E2EE Support
+
+### Insertable Streams
+
+```typescript
+supportsInsertableStreams(): boolean {
+    if (!window.RTCRtpSender?.prototype.createEncodedStreams) {
+        return false;
+    }
+    
+    // Feature-detect transferable streams (needed for worker)
+    const stream = new ReadableStream();
+    
+    try {
+        window.postMessage(stream, '*', [ stream ]);
+        return true;
+    } catch {
+        return false;
+    }
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:340-357`
+
+### Encoded Transform
+
+```typescript
+supportsEncodedTransform(): boolean {
+    return Boolean(window.RTCRtpScriptTransform);
+}
+```
+
+Alternative to insertable streams, currently Safari/WebKit behind a flag.
+
+Source: `modules/browser/BrowserCapabilities.ts:331-333`
+
+### Audio RED Format
+
+```typescript
+supportsAudioRed(): boolean {
+    return Boolean(
+        window.RTCRtpSender?.getCapabilities('audio')?.codecs
+            .some(codec => codec.mimeType === 'audio/red')
+        && window.RTCRtpReceiver?.getCapabilities('audio')?.codecs
+            .some(codec => codec.mimeType === 'audio/red')
+    );
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:364-367`
+
+## Statistics Support
+
+### Bandwidth Statistics
+
+```typescript
+supportsBandwidthStatistics(): boolean {
+    // Not implemented for Firefox or Safari on lib-jitsi-meet side
+    return !this.isFirefox() && !this.isWebKitBased();
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:167-171`
+
+### RTT Statistics
+
+```typescript
+supportsRTTStatistics(): boolean {
+    // Firefox doesn't report RTT for ICE candidate pairs
+    // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1241066
+    return !this.isFirefox();
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:236-246`
+
+### Receiver Stats
+
+```typescript
+supportsReceiverStats(): boolean {
+    return typeof window.RTCRtpReceiver !== 'undefined'
+        && Object.keys(RTCRtpReceiver.prototype).indexOf('getSynchronizationSources') > -1;
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:226-229`
+
+### Track-Based Stats
+
+```typescript
+supportsTrackBasedStats(): boolean {
+    return this.isChromiumBased() && this.isEngineVersionLessThan(112);
+}
+```
+
+Older Chrome versions (< 112) support track-based statistics for resolution/framerate.
+
+Source: `modules/browser/BrowserCapabilities.ts:265-267`
+
+## Media Capabilities
+
+### getDisplayMedia Support
+
+```typescript
+supportsGetDisplayMedia(): boolean {
+    return typeof navigator.getDisplayMedia !== 'undefined'
+        || (typeof navigator.mediaDevices?.getDisplayMedia !== 'undefined');
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:316-320`
+
+### Device Change Events
+
+```typescript
+supportsDeviceChangeEvent(): boolean {
+    return typeof navigator.mediaDevices?.ondevicechange !== 'undefined'
+        && typeof navigator.mediaDevices?.addEventListener !== 'undefined';
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:216-219`
+
+### Video Mute Strategy
+
+```typescript
+doesVideoMuteByStreamRemove(): boolean {
+    return this.isChromiumBased() || this.isWebKitBased() || this.isFirefox();
+}
+```
+
+On Firefox, the MediaStream is removed from PeerConnection on mute to turn off camera. See: https://bugzilla.mozilla.org/show_bug.cgi?id=1735951
+
+Source: `modules/browser/BrowserCapabilities.ts:56-58`
+
+### Video Mute Events
+
+```typescript
+supportsVideoMuteOnConnInterrupted(): any | boolean {
+    return this.isChromiumBased() || this.isReactNative();
+}
+```
+
+Chrome and React Native fire 'onmute'/'onunmute' events when connection is interrupted.
+
+Source: `modules/browser/BrowserCapabilities.ts:158-160`
+
+## Browser-Specific Features
+
+### User Interaction for Unmute
+
+```typescript
+isUserInteractionRequiredForUnmute(): boolean {
+    return this.isFirefox() && this.isVersionLessThan(68);
+}
+```
+
+Older Firefox versions require user interaction before unmute.
+
+Source: `modules/browser/BrowserCapabilities.ts:148-150`
+
+### RTX Support
+
+```typescript
+supportsRTX(): boolean {
+    // Disable RTX on Firefox < 96 (prefer simulcast)
+    // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1738504
+    return !(this.isFirefox() && this.isVersionLessThan(96));
+}
+```
+
+Source: `modules/browser/BrowserCapabilities.ts:383-387`
+
+### Dependency Descriptor Headers
+
+```typescript
+supportsDDExtHeaders(): boolean {
+    return !(this.isFirefox() && this.isVersionLessThan(136));
+}
+```
+
+Firefox 136+ supports Dependency Descriptor RTP header extension.
+
+Source: `modules/browser/BrowserCapabilities.ts:208-210`
+
+### Voice Activity Detection
+
+```typescript
+supportsVADDetection(): boolean {
+    return this.isChromiumBased();
+}
+```
+
+VADAudioAnalyser service is only supported on Chromium-based browsers.
+
+Source: `modules/browser/BrowserCapabilities.ts:374-376`
+
+## webrtc-adapter Integration
+
+lib-jitsi-meet uses webrtc-adapter for WebRTC API polyfills:
+
+```javascript
+import 'webrtc-adapter';
+```
+
+This provides:
+- Unified WebRTC API across browsers
+- getUserMedia polyfill
+- RTCPeerConnection shims
+- Browser compatibility fixes
+
+Source: `modules/RTC/RTCUtils.js:3`, CLAUDE.md:53
+
+## Usage Pattern
+
+```typescript
+import browser from '../browser';
+
+// Check feature support
+if (browser.supportsCodecPreferences()) {
+    // Use setCodecPreferences API
+    transceiver.setCodecPreferences(capabilities);
+} else {
+    // Fallback to SDP munging
+    mungedSdp = mungeCodecOrder(sdp);
+}
+
+// Platform-specific logic
+if (browser.isMobileDevice()) {
+    // Use mobile-optimized settings
+    codecOrder = MOBILE_VIDEO_CODEC_ORDER;
+} else {
+    codecOrder = DESKTOP_VIDEO_CODEC_ORDER;
+}
+
+// Browser-specific workarounds
+if (browser.isWebKitBased()) {
+    // Safari bug workaround
+    constraints.video.height = { ideal: height };
+    constraints.video.width = { ideal: width };
+}
+```
+
+## Common Compatibility Checks
+
+### Before Using APIs
+
+```javascript
+// Codec selection
+if (browser.supportsCodecPreferences() && !browser.isWebKitBased()) {
+    // Chrome/Edge only
+}
+
+if (browser.supportsCodecSelectionAPI()) {
+    // Chrome 126+ only
+}
+
+// E2EE
+if (browser.supportsInsertableStreams() || browser.supportsEncodedTransform()) {
+    // Enable E2EE
+}
+
+// Screen sharing
+if (browser.supportsGetDisplayMedia()) {
+    // Use getDisplayMedia
+} else {
+    // Fallback to extension or error
+}
+
+// Statistics
+if (browser.supportsReceiverStats()) {
+    receiver.getSynchronizationSources();
+}
+```
+
+### Platform Detection
+
+```javascript
+if (browser.isMobileDevice()) {
+    if (browser.isAndroidBrowser()) {
+        // Android-specific
+        if (browser.isSupportedAndroidBrowser()) {
+            // Chrome or Firefox on Android
+        }
+    } else if (browser.isIosBrowser()) {
+        // iOS-specific
+        if (browser.isSupportedIOSBrowser()) {
+            // iOS 14+ Safari or WKWebView
+        }
+    }
+}
+```
+
+<Warning>
+**iPad Detection Issue**
+
+Starting with iPadOS 13, Safari pretends to be macOS 10.15.7 in the user agent:
+
+```typescript
+const FROZEN_MACOS_VERSION = '10.15.7';
+
+if (!this.isSafari() && this.isWebKitBased() 
+    && this.getOSVersion() === FROZEN_MACOS_VERSION) {
+    // Likely an iPad
+    return true;
+}
+```
+
+This workaround is necessary for proper iPad detection.
+
+Source: `modules/browser/BrowserCapabilities.ts:10-11, 134-136`
+</Warning>
+
+## Best Practices
+
+1. **Always check feature support**: Don't assume APIs exist
+   ```javascript
+   if (browser.supportsCodecPreferences()) {
+       // Use API
+   }
+   ```
+
+2. **Use platform detection for optimization**: Different defaults for mobile
+   ```javascript
+   const codecOrder = browser.isMobileDevice() 
+       ? MOBILE_VIDEO_CODEC_ORDER 
+       : DESKTOP_VIDEO_CODEC_ORDER;
+   ```
+
+3. **Handle browser bugs**: Apply workarounds where necessary
+   ```javascript
+   if (browser.isWebKitBased()) {
+       // Safari-specific workaround
+   }
+   ```
+
+4. **Graceful degradation**: Provide fallbacks for unsupported features
+   ```javascript
+   if (!browser.supportsGetDisplayMedia()) {
+       // Show extension installation prompt or disable screenshare
+   }
+   ```
+
+5. **Check minimum versions**: Block unsupported browsers early
+   ```javascript
+   if (!browser.isSupported()) {
+       // Show unsupported browser message
+   }
+   ```
+
+## Next Steps
+
+- [WebRTC Internals](/advanced/webrtc-internals) - Browser-specific WebRTC handling
+- [Codec Selection](/advanced/codec-selection) - Codec support by browser
+- [Network Optimization](/advanced/network-optimization) - Connection handling

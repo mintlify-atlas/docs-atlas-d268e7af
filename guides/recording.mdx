@@ -1,0 +1,729 @@
+---
+title: Recording
+description: Record Jitsi conferences using Jibri integration
+---
+
+This guide covers conference recording in lib-jitsi-meet using Jibri (Jitsi Broadcasting Infrastructure) for both file recording and live streaming.
+
+## Overview
+
+Recording in lib-jitsi-meet is handled by the `RecordingManager` class, which coordinates with Jibri instances to:
+
+- **Record conferences** to file (MP4)
+- **Live stream** to YouTube, Twitch, etc.
+- **Manage recording sessions** (start, stop, status)
+- **Handle multiple recordings** simultaneously
+
+<Note>
+Recording requires a Jibri instance configured on your Jitsi deployment. Recording is not available with E2EE enabled.
+</Note>
+
+## Recording Modes
+
+Jibri supports two recording modes:
+
+- **file**: Record to MP4 file for later playback
+- **stream**: Live stream to RTMP endpoint (YouTube, Facebook, etc.)
+
+## Starting a Recording
+
+<Steps>
+
+<Step title="Check if recording is available">
+```javascript
+if (!conference.isSIPCallingSupported()) {
+    console.log('Recording not available');
+    return;
+}
+```
+</Step>
+
+<Step title="Start file recording">
+```javascript
+const recordingOptions = {
+    mode: 'file',
+    appData: JSON.stringify({
+        file_recording_metadata: {
+            share: true  // Make recording shareable
+        }
+    })
+};
+
+conference.startRecording(recordingOptions)
+    .then(session => {
+        console.log('Recording started:', session.getID());
+        recordingSession = session;
+    })
+    .catch(error => {
+        console.error('Failed to start recording:', error);
+    });
+```
+</Step>
+
+</Steps>
+
+## Live Streaming
+
+### Stream to YouTube
+
+```javascript
+const streamingOptions = {
+    mode: 'stream',
+    streamId: 'YOUR_YOUTUBE_STREAM_KEY',
+    broadcastId: 'YOUR_YOUTUBE_BROADCAST_ID',  // Optional
+    appData: JSON.stringify({
+        live_stream_view_url: 'https://youtube.com/watch?v=...'
+    })
+};
+
+conference.startRecording(streamingOptions)
+    .then(session => {
+        console.log('Streaming started:', session.getID());
+        streamingSession = session;
+        
+        // Get live stream URL
+        const viewUrl = session.getLiveStreamViewURL();
+        console.log('Watch at:', viewUrl);
+    })
+    .catch(error => {
+        console.error('Failed to start streaming:', error);
+    });
+```
+
+### Stream to Custom RTMP
+
+```javascript
+const customStreamOptions = {
+    mode: 'stream',
+    streamId: 'rtmp://your-server.com/live/stream-key',
+    appData: JSON.stringify({
+        live_stream_view_url: 'https://your-server.com/watch'
+    })
+};
+
+conference.startRecording(customStreamOptions);
+```
+
+## Recording Options
+
+### File Recording Options
+
+```typescript
+interface IRecordingOptions {
+    mode: 'file';
+    
+    // Optional metadata
+    appData?: string;  // JSON string with custom data
+}
+
+// Example with metadata
+const options = {
+    mode: 'file',
+    appData: JSON.stringify({
+        file_recording_metadata: {
+            share: true,
+            title: 'My Conference Recording',
+            description: 'Important meeting',
+            tags: ['meeting', 'important']
+        }
+    })
+};
+```
+
+### Streaming Options
+
+```typescript
+interface IStreamingOptions {
+    mode: 'stream';
+    
+    // Required: Stream key or RTMP URL
+    streamId: string;
+    
+    // Optional: YouTube broadcast ID
+    broadcastId?: string;
+    
+    // Optional metadata
+    appData?: string;
+}
+
+// Example
+const options = {
+    mode: 'stream',
+    streamId: 'xxxx-xxxx-xxxx-xxxx',
+    broadcastId: 'youtube-broadcast-id',
+    appData: JSON.stringify({
+        live_stream_view_url: 'https://youtube.com/watch?v=xxx'
+    })
+};
+```
+
+## Managing Recording Sessions
+
+### Stop Recording
+
+```javascript
+// Stop recording by session ID
+conference.stopRecording(sessionId)
+    .then(() => {
+        console.log('Recording stopped');
+    })
+    .catch(error => {
+        console.error('Failed to stop recording:', error);
+    });
+
+// Or use session object
+if (recordingSession) {
+    recordingSession.stop()
+        .then(() => {
+            console.log('Recording stopped');
+            recordingSession = null;
+        });
+}
+```
+
+### Get Recording Status
+
+```javascript
+// Get session by ID
+const session = conference.getRecordingSession(sessionId);
+
+if (session) {
+    const status = session.getStatus();
+    console.log('Recording status:', status);
+    // Status values: 'pending', 'on', 'off', 'failed'
+    
+    const mode = session.getMode();
+    console.log('Recording mode:', mode);
+    // Mode: 'file' or 'stream'
+    
+    const error = session.getError();
+    if (error) {
+        console.error('Recording error:', error);
+    }
+}
+```
+
+### Get All Active Recordings
+
+```javascript
+// Get recording manager
+const recordingManager = conference.recordingManager;
+
+// Iterate through sessions
+Object.keys(recordingManager._sessions).forEach(sessionId => {
+    const session = recordingManager._sessions[sessionId];
+    console.log('Session:', sessionId);
+    console.log('Status:', session.getStatus());
+    console.log('Mode:', session.getMode());
+});
+```
+
+## Recording Events
+
+### Monitor Recording State
+
+```javascript
+// Listen for recording state changes
+conference.on(
+    JitsiMeetJS.events.conference.RECORDER_STATE_CHANGED,
+    (session, initiator) => {
+        console.log('Recording state changed');
+        console.log('Session ID:', session.getID());
+        console.log('Status:', session.getStatus());
+        console.log('Mode:', session.getMode());
+        console.log('Initiator:', initiator);
+        
+        const status = session.getStatus();
+        
+        if (status === 'on') {
+            console.log('Recording is active');
+            updateRecordingUI(true);
+        } else if (status === 'off') {
+            console.log('Recording stopped');
+            updateRecordingUI(false);
+        } else if (status === 'pending') {
+            console.log('Recording is starting...');
+            showRecordingSpinner(true);
+        } else if (status === 'failed') {
+            const error = session.getError();
+            console.error('Recording failed:', error);
+            showRecordingError(error);
+        }
+    }
+);
+```
+
+### Live Stream URL Updates
+
+```javascript
+// For live streaming, monitor URL changes
+conference.on(
+    JitsiMeetJS.events.conference.RECORDER_STATE_CHANGED,
+    (session) => {
+        if (session.getMode() === 'stream' && session.getStatus() === 'on') {
+            const viewUrl = session.getLiveStreamViewURL();
+            if (viewUrl) {
+                console.log('Stream URL:', viewUrl);
+                displayStreamLink(viewUrl);
+            }
+        }
+    }
+);
+```
+
+## Session Object API
+
+### JibriSession Methods
+
+```javascript
+class JibriSession {
+    // Get session ID
+    getID(): string;
+    
+    // Get current status
+    // Returns: 'pending' | 'on' | 'off' | 'failed' | ''
+    getStatus(): string;
+    
+    // Get recording mode
+    // Returns: 'file' | 'stream'
+    getMode(): string;
+    
+    // Get error message (if failed)
+    getError(): string | undefined;
+    
+    // Get live stream view URL (for streaming mode)
+    getLiveStreamViewURL(): string | undefined;
+    
+    // Get Jibri JID
+    getJibriJid(): string | null;
+    
+    // Stop the recording
+    stop(options?: { focusMucJid: string }): Promise<void>;
+}
+```
+
+### Example Usage
+
+```javascript
+const session = recordingSession;
+
+// Check if recording is active
+if (session.getStatus() === 'on') {
+    console.log('Recording in progress');
+    
+    // Get session details
+    console.log('Session ID:', session.getID());
+    console.log('Mode:', session.getMode());
+    
+    // For live streams
+    if (session.getMode() === 'stream') {
+        const url = session.getLiveStreamViewURL();
+        console.log('Watch at:', url);
+    }
+    
+    // Stop recording
+    await session.stop();
+}
+```
+
+## Advanced Recording Features
+
+### Multiple Simultaneous Recordings
+
+```javascript
+// Start both file recording and live streaming
+const fileRecording = await conference.startRecording({
+    mode: 'file'
+});
+
+const liveStream = await conference.startRecording({
+    mode: 'stream',
+    streamId: 'youtube-stream-key'
+});
+
+console.log('File recording:', fileRecording.getID());
+console.log('Live stream:', liveStream.getID());
+
+// Stop them independently
+await fileRecording.stop();
+await liveStream.stop();
+```
+
+### Recording with Custom Metadata
+
+```javascript
+const metadata = {
+    file_recording_metadata: {
+        share: true,
+        title: 'Q4 2024 Strategy Meeting',
+        description: 'Strategic planning session',
+        tags: ['strategy', 'planning', 'q4'],
+        participants: conference.getParticipants().map(p => p.getDisplayName()),
+        timestamp: new Date().toISOString()
+    }
+};
+
+const options = {
+    mode: 'file',
+    appData: JSON.stringify(metadata)
+};
+
+await conference.startRecording(options);
+```
+
+### Recording Manager Direct Access
+
+```javascript
+const recordingManager = conference.recordingManager;
+
+// Start recording
+const session = await recordingManager.startRecording({
+    mode: 'file',
+    appData: '{}'
+});
+
+// Stop recording
+await recordingManager.stopRecording(session.getID());
+
+// Get session by ID
+const retrievedSession = recordingManager.getSession(sessionId);
+
+// Get session by Jibri JID
+const sessionByJid = recordingManager.getSessionByJibriJid(jibriJid);
+```
+
+## Recording Permissions
+
+### Check Recording Permissions
+
+```javascript
+// Only moderators can start/stop recordings
+const localParticipant = conference.getLocalParticipant();
+
+if (localParticipant && localParticipant.isModerator()) {
+    console.log('Can start recording');
+    enableRecordingButton();
+} else {
+    console.log('Recording requires moderator role');
+    disableRecordingButton();
+}
+```
+
+### Handle Permission Errors
+
+```javascript
+conference.startRecording({ mode: 'file' })
+    .catch(error => {
+        if (error.message.includes('not-allowed')) {
+            console.error('Not authorized to start recording');
+            showError('You must be a moderator to start recording');
+        } else {
+            console.error('Recording error:', error);
+        }
+    });
+```
+
+## Error Handling
+
+### Common Recording Errors
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.RECORDER_STATE_CHANGED,
+    (session) => {
+        if (session.getStatus() === 'failed') {
+            const error = session.getError();
+            
+            switch(error) {
+                case 'error.recording.busy':
+                    showError('All recorders are busy. Try again later.');
+                    break;
+                    
+                case 'error.recording.unavailable':
+                    showError('Recording service is unavailable');
+                    break;
+                    
+                case 'error.recording.not_allowed':
+                    showError('You do not have permission to record');
+                    break;
+                    
+                case 'error.liveStreaming.authentication_error':
+                    showError('Live streaming authentication failed');
+                    break;
+                    
+                default:
+                    showError(`Recording failed: ${error}`);
+            }
+        }
+    }
+);
+```
+
+### Retry Logic
+
+```javascript
+async function startRecordingWithRetry(options, maxRetries = 3) {
+    let retries = 0;
+    
+    while (retries < maxRetries) {
+        try {
+            const session = await conference.startRecording(options);
+            return session;
+        } catch (error) {
+            retries++;
+            console.log(`Recording attempt ${retries} failed:`, error);
+            
+            if (retries < maxRetries) {
+                // Wait before retrying
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+                throw error;
+            }
+        }
+    }
+}
+```
+
+## Complete Recording Example
+
+```javascript
+class RecordingController {
+    constructor(conference) {
+        this.conference = conference;
+        this.activeRecordings = new Map();
+        
+        this.setupListeners();
+    }
+    
+    setupListeners() {
+        this.conference.on(
+            JitsiMeetJS.events.conference.RECORDER_STATE_CHANGED,
+            (session, initiator) => this.handleRecorderStateChange(session, initiator)
+        );
+    }
+    
+    async startFileRecording(metadata = {}) {
+        if (!this.canRecord()) {
+            throw new Error('Not authorized to record');
+        }
+        
+        const options = {
+            mode: 'file',
+            appData: JSON.stringify({
+                file_recording_metadata: {
+                    share: true,
+                    timestamp: new Date().toISOString(),
+                    ...metadata
+                }
+            })
+        };
+        
+        try {
+            const session = await this.conference.startRecording(options);
+            this.activeRecordings.set(session.getID(), session);
+            return session;
+        } catch (error) {
+            console.error('Failed to start recording:', error);
+            throw error;
+        }
+    }
+    
+    async startLiveStream(streamKey, broadcastId) {
+        if (!this.canRecord()) {
+            throw new Error('Not authorized to stream');
+        }
+        
+        const options = {
+            mode: 'stream',
+            streamId: streamKey,
+            broadcastId
+        };
+        
+        try {
+            const session = await this.conference.startRecording(options);
+            this.activeRecordings.set(session.getID(), session);
+            return session;
+        } catch (error) {
+            console.error('Failed to start streaming:', error);
+            throw error;
+        }
+    }
+    
+    async stopRecording(sessionId) {
+        const session = this.activeRecordings.get(sessionId);
+        if (!session) {
+            throw new Error('Session not found');
+        }
+        
+        try {
+            await this.conference.stopRecording(sessionId);
+            this.activeRecordings.delete(sessionId);
+        } catch (error) {
+            console.error('Failed to stop recording:', error);
+            throw error;
+        }
+    }
+    
+    async stopAllRecordings() {
+        const promises = Array.from(this.activeRecordings.keys()).map(
+            sessionId => this.stopRecording(sessionId)
+        );
+        
+        await Promise.all(promises);
+    }
+    
+    handleRecorderStateChange(session, initiator) {
+        const status = session.getStatus();
+        const sessionId = session.getID();
+        
+        console.log('Recording state:', {
+            sessionId,
+            status,
+            mode: session.getMode(),
+            initiator
+        });
+        
+        switch(status) {
+            case 'on':
+                this.onRecordingStarted(session);
+                break;
+            case 'off':
+                this.onRecordingStopped(session);
+                break;
+            case 'pending':
+                this.onRecordingPending(session);
+                break;
+            case 'failed':
+                this.onRecordingFailed(session);
+                break;
+        }
+    }
+    
+    onRecordingStarted(session) {
+        console.log('Recording started:', session.getID());
+        
+        if (session.getMode() === 'stream') {
+            const url = session.getLiveStreamViewURL();
+            console.log('Stream URL:', url);
+        }
+        
+        this.updateUI({ recording: true });
+    }
+    
+    onRecordingStopped(session) {
+        console.log('Recording stopped:', session.getID());
+        this.activeRecordings.delete(session.getID());
+        
+        if (this.activeRecordings.size === 0) {
+            this.updateUI({ recording: false });
+        }
+    }
+    
+    onRecordingPending(session) {
+        console.log('Recording pending:', session.getID());
+        this.updateUI({ recordingPending: true });
+    }
+    
+    onRecordingFailed(session) {
+        const error = session.getError();
+        console.error('Recording failed:', error);
+        this.activeRecordings.delete(session.getID());
+        this.showError(error);
+    }
+    
+    canRecord() {
+        const participant = this.conference.getLocalParticipant();
+        return participant && participant.isModerator();
+    }
+    
+    getActiveRecordings() {
+        return Array.from(this.activeRecordings.values());
+    }
+    
+    isRecording() {
+        return this.activeRecordings.size > 0;
+    }
+    
+    updateUI(state) {
+        // Update UI elements
+    }
+    
+    showError(error) {
+        // Display error to user
+    }
+}
+
+// Usage
+const recordingController = new RecordingController(conference);
+
+// Start file recording
+const fileSession = await recordingController.startFileRecording({
+    title: 'My Meeting',
+    description: 'Important discussion'
+});
+
+// Start live stream
+const streamSession = await recordingController.startLiveStream(
+    'youtube-stream-key',
+    'broadcast-id'
+);
+
+// Stop specific recording
+await recordingController.stopRecording(fileSession.getID());
+
+// Stop all recordings
+await recordingController.stopAllRecordings();
+```
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Always check moderator status">
+Only moderators can control recordings:
+
+```javascript
+if (!conference.getLocalParticipant().isModerator()) {
+    throw new Error('Recording requires moderator role');
+}
+```
+</Accordion>
+
+<Accordion title="Handle all recording states">
+Implement handlers for pending, active, stopped, and failed states:
+
+```javascript
+switch(session.getStatus()) {
+    case 'pending': // Show spinner
+    case 'on': // Show recording indicator
+    case 'off': // Hide indicator
+    case 'failed': // Show error
+}
+```
+</Accordion>
+
+<Accordion title="Clean up on conference leave">
+Stop recordings when leaving:
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.CONFERENCE_LEFT,
+    async () => {
+        await recordingController.stopAllRecordings();
+    }
+);
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Statistics & Analytics" icon="chart-line" href="/guides/statistics-analytics">
+    Monitor conference metrics
+  </Card>
+  <Card title="Managing Conferences" icon="users" href="/guides/managing-conferences">
+    Learn more about conference features
+  </Card>
+</CardGroup>

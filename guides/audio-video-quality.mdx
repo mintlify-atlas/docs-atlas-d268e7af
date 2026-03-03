@@ -1,0 +1,590 @@
+---
+title: Audio/Video Quality Control
+description: Manage video quality, codec selection, and adaptive bitrate in Jitsi conferences
+---
+
+This guide covers quality control mechanisms in lib-jitsi-meet, including codec selection, resolution management, and adaptive quality features.
+
+## Overview
+
+The `QualityController` class manages optimal video quality by controlling:
+
+- **Codec selection**: Choose between VP8, VP9, H.264, and AV1
+- **Resolution management**: Control send and receive video resolution
+- **Adaptive mode**: Automatically adjust quality based on CPU and bandwidth
+- **Last-N**: Limit number of received video streams
+
+## Codec Configuration
+
+### Codec Preference Order
+
+Configure codec preferences in conference options:
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        // Codec preference order (most preferred first)
+        codecPreferenceOrder: ['VP9', 'VP8', 'H264'],
+        
+        // Preferred codec for normal video
+        preferredCodec: 'VP9',
+        
+        // Codec for screen sharing
+        screenshareCodec: 'VP9',
+        
+        // Disable specific codec
+        disabledCodec: 'H264',
+        
+        // Enable adaptive mode
+        enableAdaptiveMode: true
+    },
+    
+    // P2P codec settings
+    p2p: {
+        enabled: true,
+        codecPreferenceOrder: ['VP9', 'VP8'],
+        preferredCodec: 'VP9',
+        screenshareCodec: 'VP9',
+        disabledCodec: 'H264'
+    }
+};
+
+const conference = connection.initJitsiConference('room', conferenceOptions);
+```
+
+### Codec Selection by Complexity
+
+Codecs are automatically selected based on conference complexity:
+
+```javascript
+// Low complexity (1-2 participants): VP9 preferred
+// Medium complexity (3-5 participants): VP8 or VP9
+// High complexity (6+ participants): VP8 (more efficient for many streams)
+
+// Available codecs by complexity:
+// VP9 - Best quality, highest CPU usage
+// VP8 - Good quality, moderate CPU usage  
+// H264 - Hardware accelerated on some devices
+// AV1 - Next-gen codec (limited browser support)
+```
+
+### Mobile Codec Settings
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        // Mobile-specific codec order
+        mobileCodecPreferenceOrder: ['H264', 'VP8', 'VP9'],
+        
+        // Mobile screen share codec
+        mobileScreenshareCodec: 'VP8'
+    }
+};
+```
+
+## Video Resolution Management
+
+### Sender Video Constraints
+
+Control outgoing video resolution:
+
+```javascript
+// Set maximum resolution for local video
+conference.setSenderVideoConstraint(720); // 720p max
+
+// Common resolutions:
+// 180 - Low quality
+// 360 - Standard quality
+// 720 - HD quality
+// 1080 - Full HD quality
+// 2160 - 4K quality
+```
+
+### Receiver Video Constraints
+
+Control resolution for each received video stream:
+
+```javascript
+// Set constraints per participant
+const constraints = {
+    // High resolution for dominant speaker
+    'participant-1': { maxHeight: 720 },
+    
+    // Lower resolution for thumbnails
+    'participant-2': { maxHeight: 180 },
+    'participant-3': { maxHeight: 180 },
+    
+    // No constraint (bridge decides)
+    'participant-4': {}
+};
+
+conference.setReceiverConstraints(constraints);
+```
+
+### Dynamic Resolution Adjustment
+
+```javascript
+// Adjust based on layout
+function updateVideoConstraints(layout) {
+    const constraints = {};
+    
+    if (layout === 'tile') {
+        // Tile view: all participants same resolution
+        participants.forEach(p => {
+            constraints[p.getId()] = { maxHeight: 360 };
+        });
+    } else if (layout === 'stage') {
+        // Stage view: high res for speaker, low for others
+        const speakerId = conference.getParticipantById(dominantSpeaker);
+        constraints[speakerId] = { maxHeight: 720 };
+        
+        participants.forEach(p => {
+            if (p.getId() !== speakerId) {
+                constraints[p.getId()] = { maxHeight: 180 };
+            }
+        });
+    }
+    
+    conference.setReceiverConstraints(constraints);
+}
+```
+
+## Last-N Configuration
+
+Limit the number of video streams received to optimize bandwidth:
+
+```javascript
+// Receive up to 5 video streams
+conference.setLastN(5);
+
+// Receive all streams (default: -1)
+conference.setLastN(-1);
+
+// Disable all video reception
+conference.setLastN(0);
+
+// Get current value
+const lastN = conference.getLastN();
+```
+
+### Adaptive Last-N
+
+Automatically adjust based on CPU performance:
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        enableAdaptiveMode: true
+    },
+    
+    // Last-N configuration
+    channelLastN: 10,        // Maximum Last-N value
+    startLastN: 5,           // Initial Last-N value
+    
+    // Testing options
+    testing: {
+        lastNRampupTime: 60000  // Time to ramp back up (ms)
+    }
+};
+```
+
+### Last-N Events
+
+```javascript
+// Monitor Last-N changes
+conference.on(
+    JitsiMeetJS.events.conference.LAST_N_CHANGED,
+    (lastN) => {
+        console.log('Last-N changed to:', lastN);
+    }
+);
+```
+
+## Adaptive Quality Mode
+
+### Enable Adaptive Mode
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        // Enable automatic quality adjustment
+        enableAdaptiveMode: true
+    },
+    
+    // CPU monitoring interval
+    pcStatsInterval: 10000
+};
+```
+
+### How Adaptive Mode Works
+
+Adaptive mode automatically:
+
+1. **Monitors encode stats**: Tracks CPU usage and encoding performance
+2. **Detects quality limitations**: Identifies CPU or bandwidth bottlenecks
+3. **Adjusts parameters**: Reduces Last-N or switches codecs
+4. **Ramps back up**: Gradually increases quality when conditions improve
+
+```javascript
+// The system monitors these metrics:
+// - Quality limitation reason (CPU, bandwidth, none)
+// - Encode resolution vs requested resolution
+// - Average encode time
+// - Timestamp of limitation changes
+```
+
+### Quality Limitation Events
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.ENCODE_TIME_STATS_RECEIVED,
+    (tpc, stats) => {
+        // stats is a Map of SSRC -> stats
+        stats.forEach((stat, ssrc) => {
+            console.log('SSRC:', ssrc);
+            console.log('Codec:', stat.codec);
+            console.log('Resolution:', stat.resolution);
+            console.log('Encode time:', stat.encodeTime);
+            console.log('Quality limitation:', stat.qualityLimitationReason);
+            // Reasons: 'cpu', 'bandwidth', 'none'
+        });
+    }
+);
+```
+
+## Bandwidth Management
+
+### Video Bitrate Control
+
+```javascript
+// The bridge and client automatically adjust bitrate
+// based on available bandwidth using:
+// - Simulcast (multiple quality layers)
+// - Adaptive bitrate
+// - Network estimation
+
+// Monitor bitrate
+conference.on(
+    JitsiMeetJS.events.conference.TRACK_STREAMING_STATUS_CHANGED,
+    (track, streamingStatus) => {
+        // streamingStatus: 'active', 'inactive', 'interrupted', 'restoring'
+        if (streamingStatus === 'interrupted') {
+            console.log('Poor network quality for', track.getParticipantId());
+        }
+    }
+);
+```
+
+### Simulcast Configuration
+
+Simulcast sends multiple quality layers:
+
+```javascript
+// Simulcast is automatically enabled for VP8/VP9
+// Layers: High, Medium, Low
+
+// The bridge selects the best layer based on:
+// - Receiver constraints
+// - Available bandwidth
+// - CPU capacity
+```
+
+## Audio Quality Settings
+
+### Audio Constraints
+
+```javascript
+// Create audio track with quality settings
+const audioOptions = {
+    devices: ['audio'],
+    
+    // Disable audio processing for music/system audio
+    disableAP: false,           // Audio processing
+    disableAGC: false,          // Auto gain control
+    disableNS: false,           // Noise suppression
+    disableHPF: false,          // High-pass filter
+    
+    // Enable echo cancellation (recommended)
+    echoCancellation: true,
+    
+    // Enable noise suppression (recommended)
+    noiseSuppression: true,
+    
+    // Auto gain control
+    autoGainControl: true
+};
+
+JitsiMeetJS.createLocalTracks(audioOptions);
+```
+
+### Stereo Audio
+
+```javascript
+const audioOptions = {
+    devices: ['audio'],
+    
+    // For music or high-quality audio
+    audioQuality: {
+        stereo: true,
+        autoGainControl: false,
+        echoCancellation: false,
+        noiseSuppression: false
+    }
+};
+```
+
+## Quality Monitoring
+
+### Connection Quality
+
+```javascript
+// Monitor overall connection quality
+conference.on(
+    JitsiMeetJS.events.conference.CONNECTION_STATS,
+    (stats) => {
+        console.log('Bitrate:', stats.bitrate);
+        console.log('Packet loss:', stats.packetLoss);
+        console.log('Connection quality:', stats.connectionQuality);
+        // connectionQuality: 0-100 (100 = best)
+    }
+);
+```
+
+### Track Statistics
+
+```javascript
+// Get statistics for specific track
+conference.on(
+    JitsiMeetJS.events.conference.TRACK_STREAMING_STATUS_CHANGED,
+    (track, status) => {
+        console.log('Track:', track.getType());
+        console.log('Participant:', track.getParticipantId());
+        console.log('Status:', status);
+        
+        // Get detailed stats
+        const stats = conference.getParticipantStats(track.getParticipantId());
+        console.log('Stats:', stats);
+    }
+);
+```
+
+### Performance Metrics
+
+```javascript
+// Average RTP stats
+conference.on(
+    JitsiMeetJS.events.conference.BEFORE_STATISTICS_DISPOSED,
+    () => {
+        const avgStats = conference.avgRtpStatsReporter?.getStats();
+        if (avgStats) {
+            console.log('Average bitrate:', avgStats.bitrate);
+            console.log('Average packet loss:', avgStats.packetLoss);
+            console.log('Average framerate:', avgStats.framerate);
+        }
+    }
+);
+```
+
+## Codec-Specific Features
+
+### VP9 SVC (Scalable Video Coding)
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        preferredCodec: 'VP9',
+        codecPreferenceOrder: ['VP9', 'VP8']
+    }
+};
+
+// VP9 provides better quality at lower bitrates
+// and supports spatial/temporal scalability
+```
+
+### H.264 Hardware Acceleration
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        // H.264 may provide better performance on mobile
+        // due to hardware acceleration
+        preferredCodec: 'H264',
+        codecPreferenceOrder: ['H264', 'VP8', 'VP9']
+    }
+};
+```
+
+### AV1 Support (Experimental)
+
+```javascript
+const conferenceOptions = {
+    videoQuality: {
+        codecPreferenceOrder: ['AV1', 'VP9', 'VP8']
+    },
+    testing: {
+        // Enable AV1 in Firefox
+        enableAV1ForFF: true
+    }
+};
+```
+
+## Advanced Quality Control
+
+### Per-Track Quality Settings
+
+```javascript
+// Set quality per track type
+function setTrackQuality(track, quality) {
+    if (track.getType() === 'video') {
+        const constraints = {
+            'low': 180,
+            'standard': 360,
+            'high': 720,
+            'hd': 1080
+        };
+        
+        const height = constraints[quality] || 720;
+        
+        track.track.applyConstraints({
+            height: { ideal: height },
+            width: { ideal: Math.floor(height * 16 / 9) }
+        });
+    }
+}
+```
+
+### Quality Profiles
+
+```javascript
+const qualityProfiles = {
+    low: {
+        lastN: 3,
+        senderConstraint: 180,
+        defaultReceiverConstraint: { maxHeight: 180 }
+    },
+    medium: {
+        lastN: 5,
+        senderConstraint: 360,
+        defaultReceiverConstraint: { maxHeight: 360 }
+    },
+    high: {
+        lastN: 10,
+        senderConstraint: 720,
+        defaultReceiverConstraint: { maxHeight: 720 }
+    },
+    ultra: {
+        lastN: -1,
+        senderConstraint: 1080,
+        defaultReceiverConstraint: { maxHeight: 1080 }
+    }
+};
+
+function applyQualityProfile(profile) {
+    const settings = qualityProfiles[profile];
+    
+    conference.setLastN(settings.lastN);
+    conference.setSenderVideoConstraint(settings.senderConstraint);
+    
+    // Set constraints for all participants
+    const constraints = {};
+    conference.getParticipants().forEach(p => {
+        constraints[p.getId()] = settings.defaultReceiverConstraint;
+    });
+    conference.setReceiverConstraints(constraints);
+}
+
+// Apply profile
+applyQualityProfile('medium');
+```
+
+### Auto Quality Adjustment
+
+```javascript
+class QualityManager {
+    constructor(conference) {
+        this.conference = conference;
+        this.currentProfile = 'medium';
+        
+        // Monitor connection quality
+        conference.on(
+            JitsiMeetJS.events.conference.CONNECTION_STATS,
+            this.onConnectionStats.bind(this)
+        );
+    }
+    
+    onConnectionStats(stats) {
+        const quality = stats.connectionQuality;
+        
+        if (quality < 30 && this.currentProfile !== 'low') {
+            console.log('Switching to low quality');
+            this.applyProfile('low');
+        } else if (quality > 70 && this.currentProfile !== 'high') {
+            console.log('Switching to high quality');
+            this.applyProfile('high');
+        }
+    }
+    
+    applyProfile(profile) {
+        applyQualityProfile(profile);
+        this.currentProfile = profile;
+    }
+}
+
+const qualityManager = new QualityManager(conference);
+```
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Choose the right codec for your use case">
+- **VP9**: Best quality, good for small conferences (2-4 participants)
+- **VP8**: Balanced performance, good for medium conferences (5-10 participants)
+- **H.264**: Hardware accelerated, good for mobile and large conferences
+</Accordion>
+
+<Accordion title="Use adaptive mode for dynamic conditions">
+Enable adaptive mode to automatically handle CPU and bandwidth limitations:
+
+```javascript
+videoQuality: {
+    enableAdaptiveMode: true
+}
+```
+</Accordion>
+
+<Accordion title="Optimize for layout and use case">
+Adjust Last-N and receiver constraints based on your UI layout:
+
+```javascript
+// Thumbnail view: low resolution for all
+// Stage view: high resolution for active speaker
+// Gallery view: medium resolution for all visible participants
+```
+</Accordion>
+
+<Accordion title="Monitor quality metrics">
+Track quality metrics to identify issues:
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.ENCODE_TIME_STATS_RECEIVED,
+    (tpc, stats) => {
+        // Log CPU limitations, low resolution, etc.
+    }
+);
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="End-to-End Encryption" icon="lock" href="/guides/end-to-end-encryption">
+    Enable E2EE in conferences
+  </Card>
+  <Card title="Statistics & Analytics" icon="chart-line" href="/guides/statistics-analytics">
+    Monitor performance metrics
+  </Card>
+</CardGroup>

@@ -1,0 +1,317 @@
+---
+title: JitsiRemoteTrack
+description: Represents a remote media track from another participant
+---
+
+## Overview
+
+The `JitsiRemoteTrack` class represents a single remote media track (either audio or video) received from another participant in the conference.
+
+## Constructor
+
+```typescript
+constructor(
+  rtc: RTC,
+  conference: JitsiConference,
+  ownerEndpointId: string,
+  stream: MediaStream,
+  track: MediaStreamTrack,
+  mediaType: MediaType,
+  videoType: VideoType,
+  ssrc: number,
+  muted: boolean,
+  isP2P: boolean,
+  sourceName: string
+)
+```
+
+<ParamField path="rtc" type="RTC" required>
+  The RTC service instance
+</ParamField>
+
+<ParamField path="conference" type="JitsiConference" required>
+  The conference to which this track belongs
+</ParamField>
+
+<ParamField path="ownerEndpointId" type="string" required>
+  The endpoint ID of the track owner
+</ParamField>
+
+<ParamField path="stream" type="MediaStream" required>
+  WebRTC MediaStream, parent of the track
+</ParamField>
+
+<ParamField path="track" type="MediaStreamTrack" required>
+  Underlying WebRTC MediaStreamTrack
+</ParamField>
+
+<ParamField path="mediaType" type="MediaType" required>
+  The type of the media ('audio' or 'video')
+</ParamField>
+
+<ParamField path="videoType" type="VideoType" required>
+  The type of the video ('camera' or 'desktop')
+</ParamField>
+
+<ParamField path="ssrc" type="number" required>
+  The SSRC number of the Media Stream
+</ParamField>
+
+<ParamField path="muted" type="boolean" required>
+  The initial muted state
+</ParamField>
+
+<ParamField path="isP2P" type="boolean" required>
+  Indicates whether this track belongs to a P2P session
+</ParamField>
+
+<ParamField path="sourceName" type="string" required>
+  The source name signaled for the track
+</ParamField>
+
+## Methods
+
+### dispose()
+
+Removes attached event listeners and disposes the track streaming status.
+
+```typescript
+dispose(): Promise<void>
+```
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when disposal is complete
+</ResponseField>
+
+### setMute()
+
+Sets the current muted status and fires events for the change.
+
+```typescript
+setMute(value: boolean): void
+```
+
+<ParamField path="value" type="boolean" required>
+  The muted status to set
+</ParamField>
+
+### isMuted()
+
+Returns the current muted status of the track.
+
+```typescript
+isMuted(): boolean
+```
+
+<ResponseField name="muted" type="boolean">
+  True if the track is muted, false otherwise
+</ResponseField>
+
+### getParticipantId()
+
+Returns the participant ID which owns the track.
+
+```typescript
+getParticipantId(): string
+```
+
+<ResponseField name="participantId" type="string">
+  The ID of the participant (corresponds to Colibri endpoint ID/MUC nickname)
+</ResponseField>
+
+### getSsrc()
+
+Returns the synchronization source identifier (SSRC) of this remote track.
+
+```typescript
+getSsrc(): number
+```
+
+<ResponseField name="ssrc" type="number">
+  The SSRC of this remote track
+</ResponseField>
+
+### getSourceName()
+
+Returns the track's source name.
+
+```typescript
+getSourceName(): string
+```
+
+<ResponseField name="sourceName" type="string">
+  The source name identifier
+</ResponseField>
+
+### setOwner()
+
+Updates the properties when the track is remapped to another source.
+
+```typescript
+setOwner(owner: string): void
+```
+
+<ParamField path="owner" type="string" required>
+  The endpoint ID of the new owner
+</ParamField>
+
+### setSourceName()
+
+Sets the name of the source associated with the remote track.
+
+```typescript
+setSourceName(name: string): void
+```
+
+<ParamField path="name" type="string" required>
+  The source name to be associated with the track
+</ParamField>
+
+### getTrackStreamingStatus()
+
+Returns the track's streaming status.
+
+```typescript
+getTrackStreamingStatus(): TrackStreamingStatus | null
+```
+
+<ResponseField name="status" type="TrackStreamingStatus | null">
+  The streaming status of the track, or null if not initialized. Possible values:
+  - `ACTIVE` - Track is actively receiving media
+  - `INACTIVE` - Track is not receiving media
+  - `RESTORING` - Track is in the process of restoring
+  - `INTERRUPTED` - Track streaming was interrupted
+</ResponseField>
+
+### toString()
+
+Creates a text representation of this remote track instance.
+
+```typescript
+toString(): string
+```
+
+<ResponseField name="string" type="string">
+  String representation including user ID, type, SSRC, P2P status, source name, and track status
+</ResponseField>
+
+## Internal Methods
+
+<Note>
+The following methods are marked as internal and are primarily used by the library itself.
+</Note>
+
+### _setVideoType()
+
+Changes the video type of the track.
+
+```typescript
+_setVideoType(type: VideoType): void
+```
+
+<ParamField path="type" type="VideoType" required>
+  The new video type ('camera' or 'desktop')
+</ParamField>
+
+### _setTrackStreamingStatus()
+
+Updates the track's streaming status.
+
+```typescript
+_setTrackStreamingStatus(status: TrackStreamingStatus): void
+```
+
+<ParamField path="status" type="TrackStreamingStatus" required>
+  The current track streaming state
+</ParamField>
+
+### _setEnteredForwardedSourcesTimestamp()
+
+Updates the timestamp of when the track entered forwarded sources.
+
+```typescript
+_setEnteredForwardedSourcesTimestamp(timestamp: number): void
+```
+
+<ParamField path="timestamp" type="number" required>
+  The time in milliseconds
+</ParamField>
+
+### _getEnteredForwardedSourcesTimestamp()
+
+Returns the timestamp of when the track entered forwarded sources.
+
+```typescript
+_getEnteredForwardedSourcesTimestamp(): number | null
+```
+
+<ResponseField name="timestamp" type="number | null">
+  The time in milliseconds or null
+</ResponseField>
+
+### _clearEnteredForwardedSourcesTimestamp()
+
+Clears the timestamp of when the track entered forwarded sources.
+
+```typescript
+_clearEnteredForwardedSourcesTimestamp(): void
+```
+
+## Properties
+
+<ResponseField name="ownerEndpointId" type="string">
+  The endpoint ID of the participant who owns this track
+</ResponseField>
+
+<ResponseField name="isP2P" type="boolean">
+  Indicates whether this track belongs to a peer-to-peer session
+</ResponseField>
+
+<ResponseField name="rtcId" type="string | null">
+  The RTC identifier for this track
+</ResponseField>
+
+## Events
+
+JitsiRemoteTrack extends JitsiTrack and emits additional events:
+
+- `TRACK_MUTE_CHANGED` - Fired when the mute status changes
+- `TRACK_VIDEOTYPE_CHANGED` - Fired when the video type changes
+- `TRACK_STREAMING_STATUS_CHANGED` - Fired when the streaming status changes
+- `REMOTE_TRACK_MUTE` - Fired when the remote track is muted
+- `REMOTE_TRACK_UNMUTE` - Fired when the remote track is unmuted
+
+## Track Streaming Status
+
+The `TrackStreamingStatus` indicates the current state of media reception:
+
+- **ACTIVE** - Track is actively receiving media data
+- **INACTIVE** - Track is not receiving media data
+- **RESTORING** - Track entered forwarded sources and is attempting to restore
+- **INTERRUPTED** - Track streaming was interrupted (no data received within timeout)
+
+## Example Usage
+
+```javascript
+// Listen for streaming status changes
+remoteTrack.addEventListener(
+  JitsiTrackEvents.TRACK_STREAMING_STATUS_CHANGED,
+  (track, status) => {
+    console.log(`Track ${track.getParticipantId()} status: ${status}`);
+  }
+);
+
+// Check if track is muted
+if (remoteTrack.isMuted()) {
+  console.log('Remote track is muted');
+}
+
+// Get track information
+const participantId = remoteTrack.getParticipantId();
+const ssrc = remoteTrack.getSsrc();
+const sourceName = remoteTrack.getSourceName();
+
+// Attach to video element
+const videoElement = document.getElementById('remote-video');
+await remoteTrack.attach(videoElement);
+```

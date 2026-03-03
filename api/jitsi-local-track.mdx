@@ -1,0 +1,369 @@
+---
+title: JitsiLocalTrack
+description: Represents a local media track (audio or video)
+---
+
+## Overview
+
+The `JitsiLocalTrack` class represents a single local media track (either audio or video). One `JitsiLocalTrack` corresponds to one WebRTC MediaStreamTrack captured from the user's device.
+
+## Constructor
+
+```typescript
+constructor(trackInfo: ITrackInfo)
+```
+
+<ParamField path="trackInfo" type="ITrackInfo" required>
+  Object containing track configuration:
+  - `constraints`: The constraints used for creating the track
+  - `rtcId`: The ID assigned by the RTC module
+  - `stream`: The WebRTC MediaStream (parent of the track)
+  - `track`: The underlying WebRTC MediaStreamTrack
+  - `mediaType`: The MediaType ('audio' or 'video')
+  - `videoType`: The VideoType ('camera' or 'desktop')
+  - `effects`: Array of effects to be applied
+  - `deviceId`: The ID of the local device
+  - `facingMode`: The camera facing mode (mobile only)
+  - `sourceId`: The Chrome media source ID for desktop sharing
+  - `sourceType`: The type of source the track originates from
+</ParamField>
+
+## Methods
+
+### mute()
+
+Asynchronously mutes this track.
+
+```typescript
+mute(): Promise<void>
+```
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when the track is successfully muted
+</ResponseField>
+
+### unmute()
+
+Asynchronously unmutes this track.
+
+```typescript
+unmute(): Promise<void>
+```
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when the track is successfully unmuted
+</ResponseField>
+
+### dispose()
+
+Stops sending the media track and removes it from the HTML.
+
+```typescript
+dispose(): Promise<void>
+```
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when disposal is complete
+</ResponseField>
+
+### isLocal()
+
+Returns true for local tracks.
+
+```typescript
+isLocal(): boolean
+```
+
+<ResponseField name="isLocal" type="boolean">
+  Always returns true
+</ResponseField>
+
+### isMuted()
+
+Checks if the stream is muted.
+
+```typescript
+isMuted(): boolean
+```
+
+<ResponseField name="muted" type="boolean">
+  True if the stream is muted, false otherwise
+</ResponseField>
+
+### isEnded()
+
+Returns if the associated MediaStreamTrack is in the 'ended' state.
+
+```typescript
+isEnded(): boolean
+```
+
+<ResponseField name="ended" type="boolean">
+  True if the track has ended
+</ResponseField>
+
+### isReceivingData()
+
+Checks whether the attached MediaStream is receiving data from source.
+
+```typescript
+isReceivingData(): boolean
+```
+
+<ResponseField name="receiving" type="boolean">
+  True if the stream is receiving data, false otherwise
+</ResponseField>
+
+### getCameraFacingMode()
+
+Returns the camera facing mode for video tracks from camera.
+
+```typescript
+getCameraFacingMode(): CameraFacingMode | undefined
+```
+
+<ResponseField name="facingMode" type="CameraFacingMode | undefined">
+  'user' or 'environment' for camera tracks, undefined for other types
+</ResponseField>
+
+### getCaptureResolution()
+
+Returns the capture resolution of the video track.
+
+```typescript
+getCaptureResolution(): number
+```
+
+<ResponseField name="resolution" type="number">
+  The capture resolution in pixels
+</ResponseField>
+
+### getDeviceId()
+
+Returns the device ID associated with the track.
+
+```typescript
+getDeviceId(): string
+```
+
+<ResponseField name="deviceId" type="string">
+  The device identifier
+</ResponseField>
+
+### getDuration()
+
+Returns the duration of the track.
+
+```typescript
+getDuration(): number
+```
+
+<ResponseField name="duration" type="number">
+  The duration of the track in seconds
+</ResponseField>
+
+### getParticipantId()
+
+Returns the participant ID which owns the track.
+
+```typescript
+getParticipantId(): string
+```
+
+<ResponseField name="participantId" type="string">
+  The ID of the participant (corresponds to Colibri endpoint ID/MUC nickname)
+</ResponseField>
+
+### getSourceName()
+
+Returns the source name associated with the track.
+
+```typescript
+getSourceName(): string | null
+```
+
+<ResponseField name="sourceName" type="string | null">
+  The source name identifier
+</ResponseField>
+
+### getSsrc()
+
+Returns the primary SSRC associated with the track.
+
+```typescript
+getSsrc(): number | null
+```
+
+<ResponseField name="ssrc" type="number | null">
+  The synchronization source identifier
+</ResponseField>
+
+### setConference()
+
+Sets the JitsiConference object associated with the track.
+
+```typescript
+setConference(conference: JitsiConference): void
+```
+
+<ParamField path="conference" type="JitsiConference" required>
+  The JitsiConference object to associate with the track
+</ParamField>
+
+### setEffect()
+
+Sets the effect and switches between the modified stream and original one.
+
+```typescript
+setEffect(effect?: IStreamEffect): Promise<void>
+```
+
+<ParamField path="effect" type="IStreamEffect">
+  The effect instance to be used. Pass undefined to remove the current effect
+</ParamField>
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when the effect is successfully applied
+</ResponseField>
+
+### setSourceName()
+
+Sets the source name to be used for signaling the track.
+
+```typescript
+setSourceName(name: string): void
+```
+
+<ParamField path="name" type="string" required>
+  The source name to assign
+</ParamField>
+
+### setSsrc()
+
+Sets the primary SSRC for the track.
+
+```typescript
+setSsrc(ssrc: number): void
+```
+
+<ParamField path="ssrc" type="number" required>
+  The SSRC to assign to the track
+</ParamField>
+
+### stopStream()
+
+Stops the associated MediaStream.
+
+```typescript
+stopStream(): void
+```
+
+### toString()
+
+Creates a text representation of this local track instance.
+
+```typescript
+toString(): string
+```
+
+<ResponseField name="string" type="string">
+  String representation in format: LocalTrack[rtcId,mediaType]
+</ResponseField>
+
+### applyConstraints()
+
+Applies media constraints to the current MediaStreamTrack.
+
+```typescript
+applyConstraints(constraints: IAudioConstraints): Promise<void>
+```
+
+<ParamField path="constraints" type="IAudioConstraints" required>
+  Media constraints to apply:
+  - `autoGainControl`: Enable/disable automatic gain control
+  - `echoCancellation`: Enable/disable echo cancellation
+  - `noiseSuppression`: Enable/disable noise suppression
+  - `channelCount`: Number of audio channels
+</ParamField>
+
+<ResponseField name="Promise<void>" type="Promise">
+  Resolves when constraints are successfully applied
+</ResponseField>
+
+### onByteSentStatsReceived()
+
+Handles bytes sent statistics (used only for audio tracks to detect audio issues).
+
+```typescript
+onByteSentStatsReceived(tpc: TraceablePeerConnection, bytesSent: number): void
+```
+
+<ParamField path="tpc" type="TraceablePeerConnection" required>
+  The peer connection reporting the bytes sent stat
+</ParamField>
+
+<ParamField path="bytesSent" type="number" required>
+  The new bytes sent value
+</ParamField>
+
+## Properties
+
+<ResponseField name="rtcId" type="number">
+  The ID assigned by the RTC module on instance creation
+</ResponseField>
+
+<ResponseField name="deviceId" type="string">
+  The ID of the local device for this track
+</ResponseField>
+
+<ResponseField name="sourceId" type="string | undefined">
+  The Chrome media source ID for desktop sharing tracks
+</ResponseField>
+
+<ResponseField name="sourceType" type="string | undefined">
+  The type of source the track originates from
+</ResponseField>
+
+<ResponseField name="resolution" type="number | undefined">
+  The capture resolution for video tracks
+</ResponseField>
+
+<ResponseField name="maxEnabledResolution" type="number | undefined">
+  The maximum enabled resolution for video tracks
+</ResponseField>
+
+<ResponseField name="metadata" type="ITrackMetadata">
+  Track metadata including timestamp and display surface information
+</ResponseField>
+
+## Events
+
+JitsiLocalTrack extends JitsiTrack and emits additional events:
+
+- `LOCAL_TRACK_STOPPED` - Fired when the track stops
+- `TRACK_MUTE_CHANGED` - Fired when the mute status changes
+- `NO_DATA_FROM_SOURCE` - Fired when no data is received from the source
+- `NO_AUDIO_INPUT` - Fired when no audio input is detected
+
+## Example Usage
+
+```javascript
+// Mute a local audio track
+await localAudioTrack.mute();
+
+// Unmute the track
+await localAudioTrack.unmute();
+
+// Apply audio constraints
+await localAudioTrack.applyConstraints({
+  autoGainControl: true,
+  echoCancellation: true,
+  noiseSuppression: true
+});
+
+// Apply a video effect
+await localVideoTrack.setEffect(myVideoEffect);
+
+// Stop and dispose the track
+await localVideoTrack.dispose();
+```

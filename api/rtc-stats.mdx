@@ -1,0 +1,307 @@
+---
+title: RTCStats
+description: Integration with rtcstats server for WebRTC analytics and debugging
+---
+
+## Overview
+
+RTCStats is a singleton service that proxies WebRTC functions (getUserMedia, RTCPeerConnection) and sends analytics data to an rtcstats server via WebSocket. It must be initialized once after lib-jitsi-meet is loaded and persists for the lifetime of the application.
+
+## Key Features
+
+- Proxies WebRTC APIs to capture statistics automatically
+- Sends getstats data and WebRTC events to rtcstats server
+- Handles connection and conference lifecycle
+- Supports breakout rooms and multi-conference scenarios
+- Collects and flushes logs automatically
+
+## Methods
+
+### startWithConnection
+
+Initializes the rtcstats trace module when a JitsiConnection is created, before joining a conference.
+
+```typescript
+startWithConnection(connection: JitsiConnection): void
+```
+
+<ParamField path="connection" type="JitsiConnection" required>
+  The JitsiConnection instance containing rtcstats configuration
+</ParamField>
+
+**Configuration Options** (from `connection.options.analytics`):
+
+<ParamField path="rtcstatsEnabled" type="boolean" default="false">
+  Whether rtcstats collection is enabled
+</ParamField>
+
+<ParamField path="rtcstatsEndpoint" type="string">
+  WebSocket URL of the rtcstats server
+</ParamField>
+
+<ParamField path="rtcstatsPollInterval" type="number" default="10000">
+  Interval in milliseconds for polling WebRTC statistics
+</ParamField>
+
+<ParamField path="rtcstatsSendSdp" type="boolean" default="false">
+  Whether to send SDP (Session Description Protocol) data
+</ParamField>
+
+**Example:**
+
+```javascript
+const connection = new JitsiMeetJS.JitsiConnection(null, null, {
+  name: 'my-room',
+  analytics: {
+    rtcstatsEnabled: true,
+    rtcstatsEndpoint: 'wss://rtcstats.example.com/ws',
+    rtcstatsPollInterval: 5000,
+    rtcstatsSendSdp: true
+  }
+});
+
+// RTCStats automatically initializes when connection is created
+RTCStats.startWithConnection(connection);
+```
+
+### attachToConference
+
+Attaches RTCStats to a conference instance to track conference-specific metrics and handle conference lifecycle events.
+
+```typescript
+attachToConference(conference: JitsiConference): void
+```
+
+<ParamField path="conference" type="JitsiConference" required>
+  The JitsiConference instance to attach to
+</ParamField>
+
+This method:
+- Waits for the conference to be joined before sending identity data
+- Handles breakout room transitions
+- Tracks conference unique ID and participant information
+- Flushes logs when conference ends
+
+**Example:**
+
+```javascript
+const conference = connection.initJitsiConference('room-name', {
+  analytics: {
+    rtcstatsEnabled: true,
+    rtcstatsEndpoint: 'wss://rtcstats.example.com/ws'
+  }
+});
+
+RTCStats.attachToConference(conference);
+
+conference.on(JitsiConferenceEvents.CONFERENCE_JOINED, () => {
+  console.log('Conference joined, RTCStats is now sending data');
+});
+```
+
+### sendStatsEntry
+
+Sends a custom statistics entry to the rtcstats server. Called internally by the rtcstats proxy or by applications for custom metrics.
+
+```typescript
+sendStatsEntry(
+  statsType: RTCStatsEvents,
+  pcId?: Optional<string>,
+  data?: Optional<any>
+): void
+```
+
+<ParamField path="statsType" type="RTCStatsEvents" required>
+  The type of statistics event being sent
+</ParamField>
+
+<ParamField path="pcId" type="string">
+  Optional peer connection identifier
+</ParamField>
+
+<ParamField path="data" type="any">
+  Optional data payload for the stats entry
+</ParamField>
+
+**Example:**
+
+```javascript
+import { RTCStatsEvents } from '@jitsi/lib-jitsi-meet';
+
+// Send custom analytics event
+RTCStats.sendStatsEntry(
+  RTCStatsEvents.CONFERENCE_START_TIMESTAMP_EVENT,
+  null,
+  Date.now()
+);
+```
+
+### sendIdentity
+
+Sends identity and configuration data to the rtcstats server for tracking purposes.
+
+```typescript
+sendIdentity(identityData: any): void
+```
+
+<ParamField path="identityData" type="object" required>
+  Object containing identity information (conference name, user ID, display name, etc.)
+</ParamField>
+
+**Example:**
+
+```javascript
+RTCStats.sendIdentity({
+  confName: 'my-conference',
+  displayName: 'John Doe',
+  endpointId: 'abc123',
+  localId: 'user-xyz',
+  meetingUniqueId: 'meeting-uuid'
+});
+```
+
+### reset
+
+Resets the trace module by closing the WebSocket connection. Used when switching between conferences (e.g., breakout rooms).
+
+```typescript
+reset(): void
+```
+
+**Example:**
+
+```javascript
+// Called automatically on conference leave
+conference.on(JitsiConferenceEvents.CONFERENCE_LEFT, () => {
+  RTCStats.reset(); // Automatically called internally
+});
+```
+
+### isTraceAvailable
+
+Checks if the trace module is currently initialized and connected.
+
+```typescript
+isTraceAvailable(): boolean
+```
+
+**Returns:** `true` if trace is connected, `false` otherwise
+
+**Example:**
+
+```javascript
+if (RTCStats.isTraceAvailable()) {
+  console.log('RTCStats trace is active and sending data');
+}
+```
+
+### getDefaultLogCollector
+
+Creates or retrieves the default log collector that buffers logs and sends them to rtcstats.
+
+```typescript
+getDefaultLogCollector(maxEntryLength?: number): LogCollector
+```
+
+<ParamField path="maxEntryLength" type="number" default="10000">
+  Maximum length in bytes for each log entry
+</ParamField>
+
+**Example:**
+
+```javascript
+const logCollector = RTCStats.getDefaultLogCollector(5000);
+// Logs are automatically collected and flushed
+```
+
+## Events
+
+RTCStats emits events through its `events` EventEmitter:
+
+### RTC_STATS_PC_EVENT
+
+Emitted when a peer connection event occurs.
+
+```javascript
+RTCStats.events.on(RTCStatsEvents.RTC_STATS_PC_EVENT, (event) => {
+  console.log('Peer connection event:', event);
+});
+```
+
+### RTC_STATS_WC_DISCONNECTED
+
+Emitted when the WebSocket connection to the rtcstats server closes.
+
+```javascript
+RTCStats.events.on(RTCStatsEvents.RTC_STATS_WC_DISCONNECTED, (event) => {
+  console.log('RTCStats disconnected:', event);
+});
+```
+
+## Complete Example
+
+```javascript
+import JitsiMeetJS from '@jitsi/lib-jitsi-meet';
+import RTCStats from '@jitsi/lib-jitsi-meet/modules/RTCStats/RTCStats';
+import { RTCStatsEvents } from '@jitsi/lib-jitsi-meet/modules/RTCStats/RTCStatsEvents';
+
+// Initialize JitsiMeetJS
+JitsiMeetJS.init();
+
+// Listen to RTCStats events
+RTCStats.events.on(RTCStatsEvents.RTC_STATS_WC_DISCONNECTED, (event) => {
+  console.warn('RTCStats connection lost:', event);
+});
+
+// Create connection with rtcstats enabled
+const connection = new JitsiMeetJS.JitsiConnection(null, null, {
+  hosts: {
+    domain: 'meet.example.com',
+    muc: 'conference.meet.example.com'
+  },
+  analytics: {
+    rtcstatsEnabled: true,
+    rtcstatsEndpoint: 'wss://rtcstats.example.com/ws',
+    rtcstatsPollInterval: 10000,
+    rtcstatsSendSdp: true
+  }
+});
+
+// Start RTCStats with connection
+RTCStats.startWithConnection(connection);
+
+connection.addEventListener(
+  JitsiMeetJS.events.connection.CONNECTION_ESTABLISHED,
+  () => {
+    console.log('Connected');
+    
+    const conference = connection.initJitsiConference('my-room', {
+      analytics: {
+        rtcstatsEnabled: true,
+        rtcstatsEndpoint: 'wss://rtcstats.example.com/ws'
+      }
+    });
+    
+    // Attach to conference for detailed metrics
+    RTCStats.attachToConference(conference);
+    
+    conference.join();
+  }
+);
+
+connection.connect();
+```
+
+## Important Notes
+
+<Warning>
+  RTCStats **must** be initialized only once per application lifetime. Calling `startWithConnection` multiple times will cause the global WebRTC objects to be rewritten with unforeseen consequences.
+</Warning>
+
+<Info>
+  Data is not sent to the rtcstats server until the WebSocket connection is established. However, getUserMedia calls are buffered internally and sent once connected.
+</Info>
+
+<Note>
+  When using breakout rooms or multi-conference scenarios in React Native (where the JS context persists), RTCStats automatically handles trace reset and reinitialization between conferences.
+</Note>

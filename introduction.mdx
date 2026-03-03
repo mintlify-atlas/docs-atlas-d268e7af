@@ -1,0 +1,111 @@
+---
+title: Introduction to lib-jitsi-meet
+description: Build custom Jitsi Meet video conferencing applications with the lib-jitsi-meet JavaScript library
+---
+
+# Welcome to lib-jitsi-meet
+
+lib-jitsi-meet is a powerful JavaScript library that provides direct access to Jitsi Meet server-side video conferencing services. Build custom video conferencing applications with full control over the user interface and behavior.
+
+<CardGroup cols={3}>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Get started with npm, yarn, or pnpm package installation
+  </Card>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Create your first conference in minutes with real code examples
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/jitsi-meet-js"
+  >
+    Explore the complete API documentation
+  </Card>
+</CardGroup>
+
+## What is lib-jitsi-meet?
+
+lib-jitsi-meet is the core library powering Jitsi Meet, providing WebRTC functionality, XMPP communication, and media handling. Use it to create custom Jitsi Meet video conferences with your own GUI.
+
+### Key Features
+
+**WebRTC Media Management**
+- Create and manage local audio/video tracks with `createLocalTracks()`
+- Handle remote participant tracks with automatic event notifications
+- Support for camera, microphone, and screen sharing
+- Advanced track effects and stream manipulation
+
+**Conference Management**
+- Connect to Jitsi Meet servers via XMPP/WebSocket
+- Join and manage multi-user video conferences
+- Handle participant events (join, leave, mute, etc.)
+- Support for both JVB (multi-party) and P2P connections
+
+**End-to-End Encryption**
+- Built-in E2EE support using insertable streams
+- SFrame encryption for enhanced privacy
+- Automatic key management via Olm
+
+**Quality Control**
+- Adaptive video quality based on bandwidth
+- Codec selection and preference (VP8, VP9, H.264, AV1)
+- Last-N forwarding for large conferences
+- Simulcast and SVC support
+
+**Advanced Features**
+- Audio level monitoring and VAD (Voice Activity Detection)
+- Recording and live streaming (Jibri integration)
+- Screen sharing with desktop picker
+- React Native support for mobile applications
+- TypeScript type definitions included
+
+## Architecture Overview
+
+lib-jitsi-meet uses an event-driven architecture with clean separation between signaling (XMPP) and media (WebRTC) layers:
+
+- **JitsiMeetJS** - Main entry point and API surface
+- **JitsiConnection** - XMPP connection and authentication
+- **JitsiConference** - Conference session management
+- **JitsiTrack** - Media track abstraction (local and remote)
+- **E2EE Module** - End-to-end encryption layer
+
+<Note>
+  lib-jitsi-meet is distributed via GitHub releases, not npm. See the [Installation](/installation) guide for details.
+</Note>
+
+## Browser Support
+
+lib-jitsi-meet supports all modern browsers with WebRTC capabilities:
+
+- Chrome/Chromium 74+
+- Firefox 68+
+- Safari 14.1+
+- Edge 79+ (Chromium-based)
+- Mobile browsers (iOS Safari, Chrome Mobile)
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Install the Library"
+    icon="download"
+    href="/installation"
+  >
+    Set up lib-jitsi-meet in your project with npm, yarn, or React Native
+  </Card>
+  <Card
+    title="Build Your First Conference"
+    icon="video"
+    href="/quickstart"
+  >
+    Follow the quick start guide to create a working video conference
+  </Card>
+</CardGroup>

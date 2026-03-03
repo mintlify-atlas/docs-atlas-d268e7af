@@ -1,0 +1,400 @@
+---
+title: JitsiConnection
+description: XMPP connection management, authentication, and lifecycle
+---
+
+The `JitsiConnection` class manages the XMPP connection to Jitsi Meet servers and provides the foundation for creating conferences.
+
+## Overview
+
+`JitsiConnection` handles:
+
+- XMPP connection establishment and lifecycle
+- Authentication with JWT tokens or passwords
+- Connection state management
+- Conference creation
+- Feature advertising
+
+## Creating a Connection
+
+Connections are created using the main library API:
+
+```typescript
+const connection = new JitsiConnection(appID, token, options);
+```
+
+### Constructor Parameters
+
+```typescript
+interface IConnectionOptions {
+    serviceUrl: string;                    // WebSocket/BOSH service URL
+    hosts: {
+        domain: string;                    // XMPP domain
+    };
+    enableWebsocketResume: boolean;        // Enable connection resume
+    p2pStunServers: any[];                // STUN servers for P2P
+    websocketKeepAlive?: number;          // Keep-alive interval
+    websocketKeepAliveUrl?: string;       // Keep-alive endpoint
+    flags?: Record<string, any>;          // Feature flags
+    // ... additional options
+}
+```
+
+From `JitsiConnection.ts:16-34`:
+
+<CodeGroup>
+```typescript Constructor Implementation
+export default class JitsiConnection {
+    constructor(appID: string, token: Nullable<string>, options: IConnectionOptions) {
+        this.appID = appID;
+        this.token = token;
+        this.options = options;
+
+        // Initialize the feature flags so that they are advertised through the disco-info.
+        FeatureFlags.init(options.flags || {});
+
+        this._xmpp = new XMPP(options, token);
+
+        this.addEventListener(JitsiConnectionEvents.CONNECTION_FAILED,
+            (errType: string, msg: string, credentials: any, details: any) => {
+                Statistics.sendAnalyticsAndLog(
+                    createConnectionFailedEvent(errType, msg, details));
+            });
+    }
+}
+```
+</CodeGroup>
+
+## Connection Lifecycle
+
+### Connecting
+
+The `connect()` method establishes the XMPP connection:
+
+```typescript
+connection.connect({
+    id: 'user@domain',           // Optional: username
+    password: 'password',        // Optional: password  
+    name: 'room-name'           // Optional: room name for conference request
+});
+```
+
+From `JitsiConnection.ts:105-120`:
+
+<CodeGroup>
+```typescript Connect Method
+connect(options: IConnectOptions = {}): void {
+    RTCStats.startWithConnection(this);
+
+    // if we get redirected, we set disableFocus to skip sending the conference request twice
+    if (this.xmpp.moderator.targetUrl && !this.options.disableFocus && options.name) {
+        // The domain (optional) will uses this.options.hosts.muc.toLowerCase() if not provided
+        this.xmpp.moderator.sendConferenceRequest(this.xmpp.getRoomJid(options.name, undefined))
+            .then(() => {
+                this.xmpp.connect(options.id, options.password);
+            })
+            .catch(e => logger.trace('sendConferenceRequest rejected', e));
+    } else {
+        this.xmpp.connect(options.id, options.password);
+    }
+}
+```
+</CodeGroup>
+
+<Info>
+The connection can send an HTTP conference request to Jicofo before establishing the XMPP connection when both `options.name` is provided and the redirect URL is configured.
+</Info>
+
+### Attaching to Existing Connection
+
+For optimization, you can attach to an existing connection:
+
+```typescript
+connection.attach({
+    jid: 'user@domain/resource',
+    rid: '1234567',  // Request ID
+    sid: 'session-id' // Session ID
+});
+```
+
+### Disconnecting
+
+Clean up the connection:
+
+```typescript
+await connection.disconnect();
+```
+
+From `JitsiConnection.ts:138-144`:
+
+```typescript
+disconnect(...args: any): boolean | Promise<void> {
+    // Forward any arguments to XMPP.disconnect for finer-grained context
+    return this.xmpp.disconnect(...args);
+}
+```
+
+## Connection Events
+
+All connection events are defined in `JitsiConnectionEvents.ts:5-60`:
+
+### CONNECTION_ESTABLISHED
+
+Fired when the connection is successfully established:
+
+```typescript
+connection.addEventListener(
+    JitsiConnectionEvents.CONNECTION_ESTABLISHED,
+    (id: string) => {
+        console.log('Connected with ID:', id);
+    }
+);
+```
+
+**Parameters**:
+- `id` (string) - The ID of the local endpoint/participant/peer
+
+### CONNECTION_FAILED
+
+Fired when connection fails:
+
+```typescript
+connection.addEventListener(
+    JitsiConnectionEvents.CONNECTION_FAILED,
+    (errType, errReason, credentials, errReasonDetails) => {
+        console.error('Connection failed:', errType, errReason);
+    }
+);
+```
+
+**Parameters**:
+- `errType` (JitsiConnectionErrors) - The type of error
+- `errReason` (string) - Error message
+- `credentials` (object) - Credentials used to connect
+- `errReasonDetails` (object) - Additional error details for analytics
+
+### CONNECTION_DISCONNECTED
+
+Fired when connection is closed:
+
+```typescript
+connection.addEventListener(
+    JitsiConnectionEvents.CONNECTION_DISCONNECTED,
+    (msg: string) => {
+        console.log('Disconnected:', msg);
+    }
+);
+```
+
+**Parameters**:
+- `msg` (string) - Message associated with disconnect (e.g., last error)
+
+### Other Connection Events
+
+| Event | Description |
+|-------|-------------|
+| `CONNECTION_REDIRECTED` | Connection is redirected to a visitor node |
+| `CONNECTION_TOKEN_EXPIRED` | Token expired during connection resume |
+| `DISPLAY_NAME_REQUIRED` | Display name is required (e.g., for lobby) |
+| `PROPERTIES_UPDATED` | Connection properties updated (shard, region) |
+
+## Authentication
+
+### JWT Token Authentication
+
+Provide a JWT token during construction:
+
+```typescript
+const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...';
+const connection = new JitsiConnection('myapp', token, options);
+connection.connect();
+```
+
+### Token Refresh
+
+Renew tokens before expiration:
+
+```typescript
+await connection.refreshToken(newToken);
+```
+
+From `JitsiConnection.ts:159-163`:
+
+```typescript
+refreshToken(token: string): Promise<void> {
+    this.token = token;
+    return this._xmpp.refreshToken(this.token);
+}
+```
+
+<Warning>
+Token refresh is critical for long-running conferences. Implement token renewal before expiration to avoid disconnection.
+</Warning>
+
+### Password Authentication
+
+Provide credentials in the connect options:
+
+```typescript
+connection.connect({
+    id: 'moderator@conference.example.com',
+    password: 'secret'
+});
+```
+
+## Creating Conferences
+
+Once connected, create a conference:
+
+```typescript
+const conference = connection.initJitsiConference('room-name', {
+    openBridgeChannel: 'websocket',
+    p2p: { enabled: true },
+    // ... other options
+});
+```
+
+From `JitsiConnection.ts:173-179`:
+
+```typescript
+initJitsiConference(name: Nullable<string>, options: Record<string, any>): JitsiConference {
+    return new JitsiConference({
+        config: options,
+        connection: this,
+        name
+    });
+}
+```
+
+<Note>
+Room names must be lowercase. The constructor will throw an error if the name contains uppercase characters.
+</Note>
+
+## Feature Management
+
+Advertise client capabilities:
+
+```typescript
+// Add a feature
+connection.addFeature('urn:xmpp:jingle:apps:rtp:audio', true);
+
+// Remove a feature  
+connection.removeFeature('urn:xmpp:jingle:apps:rtp:audio', true);
+```
+
+From `JitsiConnection.ts:214-227`:
+
+```typescript
+addFeature(feature: string, submit: boolean = false): void {
+    this.xmpp.caps.addFeature(feature, submit, true);
+}
+
+removeFeature(feature: string, submit: boolean = false): void {
+    this.xmpp.caps.removeFeature(feature, submit, true);
+}
+```
+
+**Parameters**:
+- `feature` - Feature name (usually URN format)
+- `submit` - If true, immediately submit the new feature list to peers
+
+## Utilities
+
+### Get Connection JID
+
+Retrieve the participant's JID:
+
+```typescript
+const jid = connection.getJid();
+console.log('My JID:', jid); // 'room@conference.example.com/abc12345'
+```
+
+### Connection Times
+
+Get connection timing information for analytics:
+
+```typescript
+const times = connection.getConnectionTimes();
+console.log('Connection times:', times);
+```
+
+### Connection Logs
+
+Retrieve internal logs for debugging:
+
+```typescript
+const logs = connection.getLogs();
+console.log('XMPP log:', logs.metadata.xmpp);
+console.log('Jingle log:', logs);
+```
+
+From `JitsiConnection.ts:233-251`:
+
+```typescript
+getLogs(): Record<string, any> {
+    const data = this.xmpp.getJingleLog();
+    const metadata: Record<string, any> = {};
+
+    metadata.time = new Date();
+    metadata.url = window.location.href;
+    metadata.ua = navigator.userAgent;
+
+    const log = this.xmpp.getXmppLog();
+    if (log) {
+        metadata.xmpp = log;
+    }
+
+    data.metadata = metadata;
+    return data;
+}
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Handle Connection Events">
+    Always listen for connection events to handle failures gracefully:
+
+    ```typescript
+    connection.addEventListener(JitsiConnectionEvents.CONNECTION_FAILED, (error) => {
+        // Show user-friendly error message
+        // Implement retry logic
+        // Log error for debugging
+    });
+    ```
+  </Accordion>
+
+  <Accordion title="Manage Token Lifecycle">
+    Implement token refresh before expiration:
+
+    ```typescript
+    // Refresh token 5 minutes before expiration
+    const refreshTime = tokenExpiration - Date.now() - (5 * 60 * 1000);
+    setTimeout(async () => {
+        const newToken = await fetchNewToken();
+        await connection.refreshToken(newToken);
+    }, refreshTime);
+    ```
+  </Accordion>
+
+  <Accordion title="Clean Up Resources">
+    Always disconnect properly to free resources:
+
+    ```typescript
+    window.addEventListener('beforeunload', async () => {
+        await connection.disconnect();
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Related Concepts
+
+<CardGroup cols={2}>
+  <Card title="JitsiConference" icon="users" href="/concepts/conferences">
+    Learn about conference lifecycle and room management
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/concepts/architecture">
+    Understand the overall library architecture
+  </Card>
+</CardGroup>

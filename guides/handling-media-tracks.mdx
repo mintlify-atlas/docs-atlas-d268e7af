@@ -1,0 +1,602 @@
+---
+title: Handling Media Tracks
+description: Work with audio and video tracks in lib-jitsi-meet
+---
+
+This guide covers how to create, manage, and manipulate media tracks including audio, video, and desktop sharing.
+
+## Track Types
+
+lib-jitsi-meet provides two main track classes:
+
+- **JitsiLocalTrack**: Represents local media (your camera/microphone)
+- **JitsiRemoteTrack**: Represents remote participant media
+
+## Creating Local Tracks
+
+<Steps>
+
+<Step title="Request user media">
+Create audio and video tracks:
+
+```javascript
+JitsiMeetJS.createLocalTracks({
+    devices: ['audio', 'video'],
+    resolution: 720,
+    cameraDeviceId: 'default',
+    micDeviceId: 'default'
+}).then(tracks => {
+    console.log('Created tracks:', tracks);
+    localTracks = tracks;
+}).catch(error => {
+    console.error('Failed to create tracks:', error);
+});
+```
+</Step>
+
+<Step title="Add tracks to conference">
+```javascript
+tracks.forEach(track => {
+    conference.addTrack(track).catch(error => {
+        console.error('Failed to add track:', error);
+    });
+});
+```
+</Step>
+
+</Steps>
+
+### Track Creation Options
+
+```typescript
+interface ICreateLocalTracksOptions {
+    // Device selection
+    devices?: ('audio' | 'video' | 'desktop')[];
+    cameraDeviceId?: string;
+    micDeviceId?: string;
+    
+    // Video options
+    resolution?: number | string;          // 180, 360, 720, 1080, '4K'
+    minFps?: number;
+    maxFps?: number;
+    facingMode?: 'user' | 'environment';   // Mobile camera facing
+    
+    // Audio options
+    disableAGC?: boolean;                  // Disable auto gain control
+    disableAP?: boolean;                   // Disable audio processing
+    disableHPF?: boolean;                  // Disable high-pass filter
+    disableNS?: boolean;                   // Disable noise suppression
+    
+    // Desktop sharing
+    desktopSharingSourceDevice?: string;
+    desktopSharingSources?: string[];      // ['screen', 'window', 'tab']
+    
+    // Effects
+    effects?: IStreamEffect[];
+}
+```
+
+## Track Types and Properties
+
+### Check Track Type
+
+```javascript
+// Check media type
+if (track.getType() === 'video') {
+    console.log('This is a video track');
+}
+
+if (track.isAudioTrack()) {
+    console.log('Audio track');
+}
+
+if (track.isVideoTrack()) {
+    console.log('Video track');
+}
+
+// Check video type
+const videoType = track.getVideoType();
+if (videoType === 'camera') {
+    console.log('Camera track');
+} else if (videoType === 'desktop') {
+    console.log('Screen sharing track');
+}
+
+// Check if local or remote
+if (track.isLocal()) {
+    console.log('Local track');
+}
+```
+
+### Track Properties
+
+```javascript
+// Get track details
+const trackId = track.getId();
+const mediaType = track.getType();        // 'audio' or 'video'
+const participantId = track.getParticipantId();
+const isMuted = track.isMuted();
+const deviceId = track.getDeviceId();
+
+// Get resolution (video tracks)
+if (track.isVideoTrack()) {
+    const resolution = track.resolution;   // e.g., 720
+    const width = track.getWidth();
+    const height = track.getHeight();
+}
+
+// Get source name (for signaling)
+const sourceName = track.getSourceName();
+```
+
+## Managing Track State
+
+### Mute and Unmute
+
+<CodeGroup>
+
+```javascript Mute
+// Mute audio
+audioTrack.mute().then(() => {
+    console.log('Audio muted');
+}).catch(error => {
+    console.error('Failed to mute:', error);
+});
+
+// Mute video
+videoTrack.mute();
+```
+
+```javascript Unmute
+// Unmute audio
+audioTrack.unmute().then(() => {
+    console.log('Audio unmuted');
+}).catch(error => {
+    console.error('Failed to unmute:', error);
+});
+
+// Unmute video
+videoTrack.unmute();
+```
+
+```javascript Toggle
+// Toggle mute state
+if (track.isMuted()) {
+    track.unmute();
+} else {
+    track.mute();
+}
+```
+
+</CodeGroup>
+
+### Track Events
+
+```javascript
+// Listen for mute changes
+track.addEventListener(
+    JitsiMeetJS.events.track.TRACK_MUTE_CHANGED,
+    () => {
+        console.log('Mute state:', track.isMuted());
+    }
+);
+
+// Audio level changes (local tracks)
+track.addEventListener(
+    JitsiMeetJS.events.track.TRACK_AUDIO_LEVEL_CHANGED,
+    (audioLevel) => {
+        console.log('Audio level:', audioLevel);
+    }
+);
+
+// Track stopped (user revoked permissions, device unplugged)
+track.addEventListener(
+    JitsiMeetJS.events.track.LOCAL_TRACK_STOPPED,
+    () => {
+        console.log('Track stopped');
+        track.dispose();
+    }
+);
+
+// No data from source
+track.addEventListener(
+    JitsiMeetJS.events.track.NO_DATA_FROM_SOURCE,
+    () => {
+        console.warn('No data received from track');
+    }
+);
+```
+
+## Attaching and Detaching Tracks
+
+### Attach to DOM
+
+<CodeGroup>
+
+```javascript Video Track
+// Create video element
+const videoElement = document.createElement('video');
+videoElement.autoplay = true;
+videoElement.id = `video-${track.getId()}`;
+
+// Attach track
+track.attach(videoElement);
+
+// Add to DOM
+document.getElementById('video-container').appendChild(videoElement);
+```
+
+```javascript Audio Track
+// Create audio element
+const audioElement = document.createElement('audio');
+audioElement.autoplay = true;
+
+// Attach track
+track.attach(audioElement);
+
+// Add to DOM
+document.body.appendChild(audioElement);
+```
+
+```javascript By Selector
+// Attach to existing element
+track.attach($('#video-element')[0]);
+```
+
+</CodeGroup>
+
+### Detach from DOM
+
+```javascript
+// Detach from specific element
+track.detach(videoElement);
+
+// Detach from all elements
+track.detach();
+
+// Remove element from DOM
+videoElement.remove();
+```
+
+## Switching Devices
+
+### Enumerate Devices
+
+```javascript
+JitsiMeetJS.mediaDevices.enumerateDevices((devices) => {
+    devices.forEach(device => {
+        console.log('Device:', device.kind, device.label, device.deviceId);
+    });
+});
+
+// Get specific device types
+JitsiMeetJS.mediaDevices.getAudioInputDevices().then(devices => {
+    console.log('Microphones:', devices);
+});
+
+JitsiMeetJS.mediaDevices.getVideoInputDevices().then(devices => {
+    console.log('Cameras:', devices);
+});
+
+JitsiMeetJS.mediaDevices.getAudioOutputDevices().then(devices => {
+    console.log('Speakers:', devices);
+});
+```
+
+### Switch Camera
+
+```javascript
+async function switchCamera(newDeviceId) {
+    try {
+        // Create new video track
+        const [newTrack] = await JitsiMeetJS.createLocalTracks({
+            devices: ['video'],
+            cameraDeviceId: newDeviceId
+        });
+        
+        // Get old track
+        const oldTrack = localTracks.find(t => t.getType() === 'video');
+        
+        // Replace track in conference
+        await conference.replaceTrack(oldTrack, newTrack);
+        
+        // Dispose old track
+        oldTrack.dispose();
+        
+        // Update local tracks array
+        const index = localTracks.indexOf(oldTrack);
+        localTracks[index] = newTrack;
+        
+        console.log('Camera switched successfully');
+    } catch (error) {
+        console.error('Failed to switch camera:', error);
+    }
+}
+```
+
+### Switch Microphone
+
+```javascript
+async function switchMicrophone(newDeviceId) {
+    const [newTrack] = await JitsiMeetJS.createLocalTracks({
+        devices: ['audio'],
+        micDeviceId: newDeviceId
+    });
+    
+    const oldTrack = localTracks.find(t => t.getType() === 'audio');
+    await conference.replaceTrack(oldTrack, newTrack);
+    
+    oldTrack.dispose();
+    
+    const index = localTracks.indexOf(oldTrack);
+    localTracks[index] = newTrack;
+}
+```
+
+### Change Audio Output
+
+```javascript
+// Set audio output device (speakers)
+JitsiMeetJS.mediaDevices.setAudioOutputDevice(deviceId).then(() => {
+    console.log('Audio output device changed');
+}).catch(error => {
+    console.error('Failed to change audio output:', error);
+});
+
+// Listen for audio output changes
+JitsiMeetJS.mediaDevices.addEventListener(
+    JitsiMeetJS.events.mediaDevices.AUDIO_OUTPUT_DEVICE_CHANGED,
+    (deviceId) => {
+        console.log('Audio output changed to:', deviceId);
+    }
+);
+```
+
+## Track Effects
+
+### Apply Effects
+
+```javascript
+// Create effect
+const effect = {
+    isEnabled: () => true,
+    startEffect: (stream) => {
+        // Process stream and return modified stream
+        return processedStream;
+    },
+    stopEffect: () => {
+        // Clean up effect
+    }
+};
+
+// Set effect on track
+await track.setEffect(effect);
+
+// Remove effect
+await track.setEffect(undefined);
+```
+
+### Background Blur Example
+
+```javascript
+const blurEffect = {
+    isEnabled: (track) => track.isVideoTrack(),
+    
+    startEffect: (stream) => {
+        // Initialize background blur processing
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Process video frames
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.play();
+        
+        function processFrame() {
+            ctx.drawImage(video, 0, 0);
+            // Apply blur to background
+            requestAnimationFrame(processFrame);
+        }
+        processFrame();
+        
+        return canvas.captureStream();
+    },
+    
+    stopEffect: () => {
+        // Clean up resources
+    }
+};
+
+await videoTrack.setEffect(blurEffect);
+```
+
+## Remote Tracks
+
+### Receive Remote Tracks
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.TRACK_ADDED,
+    (track) => {
+        if (track.isLocal()) {
+            return;
+        }
+        
+        const participantId = track.getParticipantId();
+        console.log(`Remote track from ${participantId}:`, track.getType());
+        
+        // Create container for participant
+        let container = document.getElementById(`participant-${participantId}`);
+        if (!container) {
+            container = document.createElement('div');
+            container.id = `participant-${participantId}`;
+            document.getElementById('remote-videos').appendChild(container);
+        }
+        
+        // Create and attach media element
+        const element = track.isVideoTrack() 
+            ? document.createElement('video')
+            : document.createElement('audio');
+        
+        element.autoplay = true;
+        element.id = `${participantId}-${track.getType()}`;
+        
+        container.appendChild(element);
+        track.attach(element);
+    }
+);
+```
+
+### Handle Track Removal
+
+```javascript
+conference.on(
+    JitsiMeetJS.events.conference.TRACK_REMOVED,
+    (track) => {
+        if (track.isLocal()) {
+            return;
+        }
+        
+        const participantId = track.getParticipantId();
+        console.log(`Track removed from ${participantId}`);
+        
+        // Detach and remove element
+        const element = document.getElementById(
+            `${participantId}-${track.getType()}`
+        );
+        
+        if (element) {
+            track.detach(element);
+            element.remove();
+        }
+    }
+);
+```
+
+### Track Streaming Status
+
+```javascript
+// Monitor track playback status
+track.addEventListener(
+    JitsiMeetJS.events.track.TRACK_STREAMING_STATUS_CHANGED,
+    (streamingStatus) => {
+        // streamingStatus: 'active', 'inactive', 'interrupted', 'restoring'
+        console.log('Streaming status:', streamingStatus);
+        
+        if (streamingStatus === 'interrupted') {
+            // Show loading indicator
+        } else if (streamingStatus === 'active') {
+            // Hide loading indicator
+        }
+    }
+);
+```
+
+## Advanced Track Operations
+
+### Get Underlying MediaStream
+
+```javascript
+// Get WebRTC MediaStream
+const stream = track.getOriginalStream();
+const mediaStreamTrack = track.track;
+
+// Get stream settings
+const settings = mediaStreamTrack.getSettings();
+console.log('Track settings:', settings);
+
+// Get constraints
+const constraints = mediaStreamTrack.getConstraints();
+console.log('Track constraints:', constraints);
+```
+
+### Apply Constraints
+
+```javascript
+// Apply new constraints to video track
+const constraints = {
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    frameRate: { ideal: 30 }
+};
+
+track.track.applyConstraints(constraints).then(() => {
+    console.log('Constraints applied');
+}).catch(error => {
+    console.error('Failed to apply constraints:', error);
+});
+```
+
+### Dispose Tracks
+
+```javascript
+// Properly dispose of a track
+track.dispose().then(() => {
+    console.log('Track disposed');
+});
+
+// Dispose all local tracks
+localTracks.forEach(track => {
+    track.dispose();
+});
+localTracks = [];
+```
+
+## Best Practices
+
+<AccordionGroup>
+
+<Accordion title="Always dispose tracks when done">
+```javascript
+// Clean up on conference leave
+conference.on(
+    JitsiMeetJS.events.conference.CONFERENCE_LEFT,
+    () => {
+        localTracks.forEach(track => {
+            track.dispose();
+        });
+        localTracks = [];
+    }
+);
+```
+</Accordion>
+
+<Accordion title="Handle device changes gracefully">
+```javascript
+// Listen for device changes
+JitsiMeetJS.mediaDevices.addEventListener(
+    JitsiMeetJS.events.mediaDevices.DEVICE_LIST_CHANGED,
+    (devices) => {
+        console.log('Devices changed:', devices);
+        // Update device list in UI
+    }
+);
+```
+</Accordion>
+
+<Accordion title="Check for track support">
+```javascript
+// Check if browser supports video
+if (JitsiMeetJS.mediaDevices.isDevicePermissionGranted('video')) {
+    // Create video track
+}
+
+// Check for specific features
+if (JitsiMeetJS.isDesktopSharingEnabled()) {
+    // Enable screen sharing button
+}
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Screen Sharing" icon="desktop" href="/guides/screen-sharing">
+    Learn about desktop sharing
+  </Card>
+  <Card title="Audio/Video Quality" icon="signal" href="/guides/audio-video-quality">
+    Control media quality
+  </Card>
+</CardGroup>
